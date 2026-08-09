@@ -80,14 +80,15 @@ func (s *Service) FindZones(ctx context.Context, query string) ([]model.Zone, er
 }
 
 // Search busca comercios de un tipo dentro de una zona (nombre o place_id).
-// Si una consulta alcanza el límite de Google (60), subdivide la zona en
-// cuadrículas y combina resultados sin duplicados (sin techo artificial).
-func (s *Service) Search(ctx context.Context, businessType, zoneRef string) (model.SearchResponse, error) {
+// Si radiusKm > 0, acota al círculo centro+radio; si no, usa el viewport
+// geocodificado de la zona. Si una consulta alcanza el límite de Google (60),
+// subdivide el área en cuadrículas y combina resultados sin duplicados.
+func (s *Service) Search(ctx context.Context, businessType, zoneRef string, radiusKm float64) (model.SearchResponse, error) {
 	if businessType == "" || zoneRef == "" {
 		return model.SearchResponse{}, fmt.Errorf("type y zone son obligatorios")
 	}
 
-	cacheKey := businessType + "|" + zoneRef
+	cacheKey := fmt.Sprintf("%s|%s|%.2f", businessType, zoneRef, radiusKm)
 	if cached, ok := s.search.Get(cacheKey); ok {
 		return cached, nil
 	}
@@ -97,14 +98,24 @@ func (s *Service) Search(ctx context.Context, businessType, zoneRef string) (mod
 		return model.SearchResponse{}, err
 	}
 
-	businesses, err := s.searchViewport(ctx, businessType, zone.Viewport, 0)
+	searchVP := zone.Viewport
+	if radiusKm > 0 {
+		searchVP = geo.ViewportFromRadius(zone.Center, radiusKm)
+	}
+
+	businesses, err := s.searchViewport(ctx, businessType, searchVP, 0)
 	if err != nil {
 		return model.SearchResponse{}, err
 	}
 
-	// Solo comercios dentro del viewport original de la zona.
 	filtered := make([]model.Business, 0, len(businesses))
 	for _, b := range businesses {
+		if radiusKm > 0 {
+			if geo.WithinRadius(zone.Center, b.Location, radiusKm) {
+				filtered = append(filtered, b)
+			}
+			continue
+		}
 		if geo.Contains(zone.Viewport, b.Location) {
 			filtered = append(filtered, b)
 		}
@@ -114,12 +125,14 @@ func (s *Service) Search(ctx context.Context, businessType, zoneRef string) (mod
 		Zone:       *zone,
 		Query:      businessType,
 		Count:      len(filtered),
+		RadiusKm:   radiusKm,
 		Businesses: filtered,
 	}
 	s.search.Set(cacheKey, resp)
 	s.logger.Info("búsqueda completada",
 		"type", businessType,
 		"zone", zone.Name,
+		"radius_km", radiusKm,
 		"count", len(filtered),
 	)
 	return resp, nil

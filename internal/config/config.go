@@ -10,16 +10,17 @@ import (
 )
 
 type Config struct {
-	Port               string
-	GoogleMapsAPIKey   string
-	GoogleMapsLanguage string
-	GoogleMapsRegion   string
-	GoogleHTTPTimeout  time.Duration
-	CacheTTL           time.Duration
-	CacheCleanup       time.Duration
-	MaxPages           int
-	GridMaxDepth       int
-	SearchWorkers      int
+	Port                    string
+	GoogleMapsAPIKey        string
+	GoogleMapsLanguage      string
+	GoogleMapsRegion        string
+	GoogleHTTPTimeout       time.Duration
+	CacheTTL                time.Duration
+	CacheCleanup            time.Duration
+	MaxPages                int
+	GridMaxDepth            int
+	SearchWorkers           int
+	FirebaseCredentialsFile string
 }
 
 func Load() (Config, error) {
@@ -35,16 +36,17 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Port:               env("PORT", "8080"),
-		GoogleMapsAPIKey:   apiKey,
-		GoogleMapsLanguage: env("GOOGLE_MAPS_LANGUAGE", "es"),
-		GoogleMapsRegion:   env("GOOGLE_MAPS_REGION", "CO"),
-		GoogleHTTPTimeout:  seconds("GOOGLE_HTTP_TIMEOUT", 10),
-		CacheTTL:           seconds("CACHE_TTL_SECONDS", 3600),
-		CacheCleanup:       seconds("CACHE_CLEANUP_SECONDS", 600),
-		MaxPages:           intEnv("MAX_PAGES", 3),
-		GridMaxDepth:       intEnv("GRID_MAX_DEPTH", 3),
-		SearchWorkers:      intEnv("SEARCH_WORKERS", 4),
+		Port:                    env("PORT", "8080"),
+		GoogleMapsAPIKey:        apiKey,
+		GoogleMapsLanguage:      env("GOOGLE_MAPS_LANGUAGE", "es"),
+		GoogleMapsRegion:        env("GOOGLE_MAPS_REGION", "CO"),
+		GoogleHTTPTimeout:       seconds("GOOGLE_HTTP_TIMEOUT", 10),
+		CacheTTL:                seconds("CACHE_TTL_SECONDS", 3600),
+		CacheCleanup:            seconds("CACHE_CLEANUP_SECONDS", 600),
+		MaxPages:                intEnv("MAX_PAGES", 3),
+		GridMaxDepth:            intEnv("GRID_MAX_DEPTH", 3),
+		SearchWorkers:           intEnv("SEARCH_WORKERS", 4),
+		FirebaseCredentialsFile: env("FIREBASE_CREDENTIALS_FILE", "sistecontact-firebase-adminsdk-fbsvc-8adb9b6483.json"),
 	}
 	return cfg, nil
 }

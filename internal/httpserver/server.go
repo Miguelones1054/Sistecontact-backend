@@ -6,7 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"firebase.google.com/go/v4/auth"
+	"github.com/sistecontact/api/internal/contactstatus"
 	"github.com/sistecontact/api/internal/search"
+	"github.com/sistecontact/api/internal/tovisit"
+	"github.com/sistecontact/api/internal/visits"
 )
 
 type Server struct {
@@ -14,13 +18,34 @@ type Server struct {
 	logger  *slog.Logger
 }
 
-func New(addr string, svc *search.Service, logger *slog.Logger) *Server {
-	h := NewHandler(svc)
+func New(
+	addr string,
+	svc *search.Service,
+	visitStore *visits.Store,
+	toVisitStore *tovisit.Store,
+	contactStore *contactstatus.Store,
+	authClient *auth.Client,
+	logger *slog.Logger,
+) *Server {
+	h := NewHandler(svc, visitStore, toVisitStore, contactStore)
+	authMW := requireAuth(authClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/zones", h.zones)
 	mux.HandleFunc("GET /api/search", h.search)
+
+	mux.Handle("GET /api/visits", authMW(http.HandlerFunc(h.listVisits)))
+	mux.Handle("PUT /api/visits/{placeId}", authMW(http.HandlerFunc(h.upsertVisit)))
+	mux.Handle("DELETE /api/visits/{placeId}", authMW(http.HandlerFunc(h.deleteVisit)))
+	mux.Handle("GET /api/businesses/{placeId}/visitors", authMW(http.HandlerFunc(h.listBusinessVisitors)))
+
+	mux.Handle("GET /api/to-visit", authMW(http.HandlerFunc(h.listToVisit)))
+	mux.Handle("PUT /api/to-visit/{placeId}", authMW(http.HandlerFunc(h.upsertToVisit)))
+	mux.Handle("DELETE /api/to-visit/{placeId}", authMW(http.HandlerFunc(h.deleteToVisit)))
+
+	mux.Handle("GET /api/contact-status", authMW(http.HandlerFunc(h.listContactStatus)))
+	mux.Handle("PUT /api/contact-status/{placeId}", authMW(http.HandlerFunc(h.upsertContactStatus)))
 
 	stack := chain(mux, cors, recoverPanic(logger), logging(logger))
 
@@ -30,9 +55,8 @@ func New(addr string, svc *search.Service, logger *slog.Logger) *Server {
 			Handler:           stack,
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       15 * time.Second,
-			// Búsquedas con subdivisión de zona pueden tardar varios minutos.
-			WriteTimeout: 5 * time.Minute,
-			IdleTimeout:  120 * time.Second,
+			WriteTimeout:      5 * time.Minute,
+			IdleTimeout:       120 * time.Second,
 		},
 		logger: logger,
 	}
@@ -43,7 +67,6 @@ func (s *Server) Start() error {
 	return s.httpSrv.ListenAndServe()
 }
 
-// Shutdown detiene el servidor de forma ordenada esperando conexiones activas.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpSrv.Shutdown(ctx)
 }

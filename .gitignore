@@ -8,5 +8,9 @@
 # Entorno
 .env
 
+# Credenciales Firebase Admin (secretas)
+*firebase-adminsdk*.json
+*-firebase-adminsdk-*.json
+
 # Dependencias
 /vendor/

@@ -33,13 +33,15 @@ type Business struct {
 }
 
 type SearchRequest struct {
-	Type string `json:"type"`
-	Zone string `json:"zone"`
+	Type     string  `json:"type"`
+	Zone     string  `json:"zone"`
+	RadiusKm float64 `json:"radius_km,omitempty"`
 }
 
 type SearchResponse struct {
-	Zone      Zone       `json:"zone"`
-	Query     string     `json:"query"`
-	Count     int        `json:"count"`
+	Zone       Zone       `json:"zone"`
+	Query      string     `json:"query"`
+	Count      int        `json:"count"`
+	RadiusKm   float64    `json:"radius_km,omitempty"`
 	Businesses []Business `json:"businesses"`
 }
