@@ -5,30 +5,30 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sistecontact/api/internal/model"
-	"github.com/sistecontact/api/internal/search"
 	"github.com/sistecontact/api/internal/contactstatus"
-	"github.com/sistecontact/api/internal/tovisit"
+	"github.com/sistecontact/api/internal/model"
+	"github.com/sistecontact/api/internal/prospects"
+	"github.com/sistecontact/api/internal/search"
 	"github.com/sistecontact/api/internal/visits"
 )
 
 type Handler struct {
-	svc            *search.Service
-	visits         *visits.Store
-	tovisit        *tovisit.Store
-	contactStatus  *contactstatus.Store
+	svc           *search.Service
+	visits        *visits.Store
+	prospects     *prospects.Store
+	contactStatus *contactstatus.Store
 }
 
 func NewHandler(
 	svc *search.Service,
 	visitStore *visits.Store,
-	toVisitStore *tovisit.Store,
+	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
 ) *Handler {
 	return &Handler{
 		svc:           svc,
 		visits:        visitStore,
-		tovisit:       toVisitStore,
+		prospects:     prospectStore,
 		contactStatus: contactStore,
 	}
 }
@@ -135,8 +135,8 @@ func (h *Handler) upsertVisit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	// Si estaba en "por visitar", se quita al marcar visitado.
-	_ = h.tovisit.Delete(r.Context(), identity.UID, placeID)
+	// Si estaba en prospectos, se quita al marcar visitado.
+	_ = h.prospects.Delete(r.Context(), identity.UID, placeID)
 	writeJSON(w, http.StatusOK, visit)
 }
 
@@ -183,8 +183,30 @@ func (h *Handler) listBusinessVisitors(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// GET /api/to-visit?place_ids=id1,id2 (opcional)
-func (h *Handler) listToVisit(w http.ResponseWriter, r *http.Request) {
+// GET /api/businesses/{placeId}/scheduled
+func (h *Handler) listBusinessScheduled(w http.ResponseWriter, r *http.Request) {
+	if _, ok := uidFromContext(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "no autenticado")
+		return
+	}
+
+	placeID := r.PathValue("placeId")
+	if placeID == "" {
+		writeError(w, http.StatusBadRequest, "place_id requerido")
+		return
+	}
+
+	items, err := h.prospects.ListGlobalSchedulers(r.Context(), placeID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	writeJSON(w, http.StatusOK, items)
+}
+
+// GET /api/prospects?place_ids=id1,id2 (opcional)
+func (h *Handler) listProspects(w http.ResponseWriter, r *http.Request) {
 	uid, ok := uidFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "no autenticado")
@@ -202,13 +224,13 @@ func (h *Handler) listToVisit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		items []model.ToVisit
+		items []model.Prospect
 		err   error
 	)
 	if len(placeIDs) > 0 {
-		items, err = h.tovisit.GetByPlaceIDs(r.Context(), uid, placeIDs)
+		items, err = h.prospects.GetByPlaceIDs(r.Context(), uid, placeIDs)
 	} else {
-		items, err = h.tovisit.List(r.Context(), uid)
+		items, err = h.prospects.List(r.Context(), uid)
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -218,9 +240,9 @@ func (h *Handler) listToVisit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-// PUT /api/to-visit/{placeId}
-func (h *Handler) upsertToVisit(w http.ResponseWriter, r *http.Request) {
-	uid, ok := uidFromContext(r.Context())
+// PUT /api/prospects/{placeId}
+func (h *Handler) upsertProspect(w http.ResponseWriter, r *http.Request) {
+	identity, ok := identityFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "no autenticado")
 		return
@@ -232,19 +254,23 @@ func (h *Handler) upsertToVisit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req model.UpsertToVisitRequest
+	var req model.UpsertProspectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 
-	item, err := h.tovisit.Upsert(r.Context(), uid, placeID, req)
+	item, err := h.prospects.Upsert(r.Context(), identity, placeID, req)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		msg := err.Error()
+		if strings.Contains(msg, "visit_date") || strings.Contains(msg, "contact_status") || strings.Contains(msg, "name es obligatorio") {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		writeError(w, http.StatusBadGateway, msg)
 		return
 	}
-	// Mantén colección de estados alineada.
-	_, _ = h.contactStatus.Upsert(r.Context(), uid, placeID, model.UpsertContactStatusRequest{
+	_, _ = h.contactStatus.Upsert(r.Context(), identity.UID, placeID, model.UpsertContactStatusRequest{
 		Name:          item.Name,
 		Address:       item.Address,
 		ContactStatus: item.ContactStatus,
@@ -252,8 +278,8 @@ func (h *Handler) upsertToVisit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-// DELETE /api/to-visit/{placeId}
-func (h *Handler) deleteToVisit(w http.ResponseWriter, r *http.Request) {
+// DELETE /api/prospects/{placeId}
+func (h *Handler) deleteProspect(w http.ResponseWriter, r *http.Request) {
 	uid, ok := uidFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "no autenticado")
@@ -266,7 +292,7 @@ func (h *Handler) deleteToVisit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tovisit.Delete(r.Context(), uid, placeID); err != nil {
+	if err := h.prospects.Delete(r.Context(), uid, placeID); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -325,7 +351,6 @@ func (h *Handler) upsertContactStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Sincroniza el estado en "por visitar" si el comercio ya está ahí.
-	_ = h.tovisit.UpdateContactStatus(r.Context(), uid, placeID, item.ContactStatus)
+	_ = h.prospects.UpdateContactStatus(r.Context(), uid, placeID, item.ContactStatus)
 	writeJSON(w, http.StatusOK, item)
 }

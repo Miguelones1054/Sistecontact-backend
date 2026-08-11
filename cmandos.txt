@@ -1,1 +1,66 @@
+# =========================
+# BACKEND (Sistecontact-backend)
+# =========================
+
+# Arrancar servidor (si "go" no se reconoce, usa estas 2 líneas):
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 go run ./cmd/server
+
+# Alternativa directa sin PATH:
+# & "C:\Program Files\Go\bin\go.exe" run ./cmd/server
+
+# Subir cambios a GitHub (cuenta: rangersfitnes)
+cd C:\Users\juand\OneDrive\Escritorio\sistecontact\Sistecontact-backend
+gh auth switch --user rangersfitnes
+gh auth setup-git
+git add .
+git commit -m "describe el cambio"
+git push -u origin main
+
+# Repo:
+# https://github.com/Miguelones1054/Sistecontact-backend
+
+
+# =========================
+# FRONTEND (sistecontact-fronted)
+# =========================
+
+# Arrancar frontend
+cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted
+npm run dev
+
+# Subir cambios a GitHub (cuenta: rangersfitnes)
+cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted
+gh auth switch --user rangersfitnes
+gh auth setup-git
+git add .
+git commit -m "describe el cambio"
+git push -u origin main
+
+# Repo:
+# https://github.com/Miguelones1054/sistecontact-fronted
+
+
+# =========================
+# Notas
+# =========================
+# - Si falla el push (403), ejecuta primero:
+#   gh auth switch --user rangersfitnes
+#   gh auth setup-git
+# - No subas .env ni el JSON de Firebase (ya están en .gitignore)
+# - Si no hay cambios, git commit dirá: nothing to commit
+# - Script automático: C:\Users\juand\OneDrive\Escritorio\sistecontact\push-all.ps1
+
+
+# =========================
+# COPIAR Y PEGAR (subir backend + frontend)
+# =========================
+
+# Opción A — script (recomendado):
+cd C:\Users\juand\OneDrive\Escritorio\sistecontact; .\push-all.ps1
+
+# Opción A con mensaje personalizado:
+cd C:\Users\juand\OneDrive\Escritorio\sistecontact; .\push-all.ps1 -Message "describe el cambio"
+
+# Opción B — pegar este bloque completo en PowerShell:
+gh auth switch --user rangersfitnes; gh auth setup-git; cd C:\Users\juand\OneDrive\Escritorio\sistecontact\Sistecontact-backend; git add .; git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { git commit -m "update backend" }; git push -u origin main; cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted; git add .; git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { git commit -m "update frontend" }; git push -u origin main

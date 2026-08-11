@@ -14,8 +14,8 @@ import (
 	"github.com/sistecontact/api/internal/fireapp"
 	"github.com/sistecontact/api/internal/googlemaps"
 	"github.com/sistecontact/api/internal/httpserver"
+	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
-	"github.com/sistecontact/api/internal/tovisit"
 	"github.com/sistecontact/api/internal/visits"
 )
 
@@ -49,9 +49,9 @@ func main() {
 		logger,
 	)
 	visitStore := visits.NewStore(fb.Firestore)
-	toVisitStore := tovisit.NewStore(fb.Firestore)
+	prospectStore := prospects.NewStore(fb.Firestore)
 	contactStore := contactstatus.NewStore(fb.Firestore)
-	srv := httpserver.New(":"+cfg.Port, svc, visitStore, toVisitStore, contactStore, fb.Auth, logger)
+	srv := httpserver.New(":"+cfg.Port, svc, visitStore, prospectStore, contactStore, fb.Auth, logger)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

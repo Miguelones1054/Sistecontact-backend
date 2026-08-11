@@ -8,8 +8,8 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/sistecontact/api/internal/contactstatus"
+	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
-	"github.com/sistecontact/api/internal/tovisit"
 	"github.com/sistecontact/api/internal/visits"
 )
 
@@ -22,12 +22,12 @@ func New(
 	addr string,
 	svc *search.Service,
 	visitStore *visits.Store,
-	toVisitStore *tovisit.Store,
+	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
 	authClient *auth.Client,
 	logger *slog.Logger,
 ) *Server {
-	h := NewHandler(svc, visitStore, toVisitStore, contactStore)
+	h := NewHandler(svc, visitStore, prospectStore, contactStore)
 	authMW := requireAuth(authClient)
 
 	mux := http.NewServeMux()
@@ -39,10 +39,11 @@ func New(
 	mux.Handle("PUT /api/visits/{placeId}", authMW(http.HandlerFunc(h.upsertVisit)))
 	mux.Handle("DELETE /api/visits/{placeId}", authMW(http.HandlerFunc(h.deleteVisit)))
 	mux.Handle("GET /api/businesses/{placeId}/visitors", authMW(http.HandlerFunc(h.listBusinessVisitors)))
+	mux.Handle("GET /api/businesses/{placeId}/scheduled", authMW(http.HandlerFunc(h.listBusinessScheduled)))
 
-	mux.Handle("GET /api/to-visit", authMW(http.HandlerFunc(h.listToVisit)))
-	mux.Handle("PUT /api/to-visit/{placeId}", authMW(http.HandlerFunc(h.upsertToVisit)))
-	mux.Handle("DELETE /api/to-visit/{placeId}", authMW(http.HandlerFunc(h.deleteToVisit)))
+	mux.Handle("GET /api/prospects", authMW(http.HandlerFunc(h.listProspects)))
+	mux.Handle("PUT /api/prospects/{placeId}", authMW(http.HandlerFunc(h.upsertProspect)))
+	mux.Handle("DELETE /api/prospects/{placeId}", authMW(http.HandlerFunc(h.deleteProspect)))
 
 	mux.Handle("GET /api/contact-status", authMW(http.HandlerFunc(h.listContactStatus)))
 	mux.Handle("PUT /api/contact-status/{placeId}", authMW(http.HandlerFunc(h.upsertContactStatus)))
