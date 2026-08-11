@@ -1,0 +1,20 @@
+[Unit]
+Description=SisteContact API (Go)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Sistecontact-api
+EnvironmentFile=/root/Sistecontact-api/.env
+ExecStart=/root/Sistecontact-api/bin/sistecontact-api
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+# Logs a journald: journalctl -u sistecontact-api -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
