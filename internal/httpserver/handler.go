@@ -271,9 +271,11 @@ func (h *Handler) upsertProspect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = h.contactStatus.Upsert(r.Context(), identity.UID, placeID, model.UpsertContactStatusRequest{
-		Name:          item.Name,
-		Address:       item.Address,
-		ContactStatus: item.ContactStatus,
+		Name:           item.Name,
+		Address:        item.Address,
+		ContactStatus:  item.ContactStatus,
+		ContactOutcome: item.ContactOutcome,
+		ContactNotes:   item.ContactNotes,
 	})
 	writeJSON(w, http.StatusOK, item)
 }
@@ -351,6 +353,13 @@ func (h *Handler) upsertContactStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	_ = h.prospects.UpdateContactStatus(r.Context(), uid, placeID, item.ContactStatus)
+	_ = h.prospects.UpdateContactStatus(
+		r.Context(),
+		uid,
+		placeID,
+		item.ContactStatus,
+		item.ContactOutcome,
+		item.ContactNotes,
+	)
 	writeJSON(w, http.StatusOK, item)
 }

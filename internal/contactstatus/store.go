@@ -81,12 +81,24 @@ func (s *Store) Upsert(ctx context.Context, uid, placeID string, req model.Upser
 		return model.ContactStatusRecord{}, fmt.Errorf("contact_status inválido")
 	}
 
+	outcome := strings.TrimSpace(req.ContactOutcome)
+	notes := strings.TrimSpace(req.ContactNotes)
+	if statusValue == model.ContactStatusNotContacted {
+		outcome = ""
+		notes = ""
+	}
+	if !model.ValidContactOutcome(outcome) {
+		return model.ContactStatusRecord{}, fmt.Errorf("contact_outcome inválido")
+	}
+
 	item := model.ContactStatusRecord{
-		PlaceID:       placeID,
-		Name:          strings.TrimSpace(req.Name),
-		Address:       strings.TrimSpace(req.Address),
-		ContactStatus: statusValue,
-		UpdatedAt:     time.Now().UTC(),
+		PlaceID:        placeID,
+		Name:           strings.TrimSpace(req.Name),
+		Address:        strings.TrimSpace(req.Address),
+		ContactStatus:  statusValue,
+		ContactOutcome: outcome,
+		ContactNotes:   notes,
+		UpdatedAt:      time.Now().UTC(),
 	}
 
 	ref := s.col(uid).Doc(sanitizePlaceID(placeID))

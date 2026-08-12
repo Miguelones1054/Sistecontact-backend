@@ -7,6 +7,7 @@
 
 # Entorno
 .env
+deploy-backend.ps1
 
 # Credenciales Firebase Admin (secretas)
 *firebase-adminsdk*.json

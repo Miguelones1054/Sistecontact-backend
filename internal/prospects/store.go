@@ -148,6 +148,23 @@ func (s *Store) Upsert(ctx context.Context, identity model.VisitorIdentity, plac
 		return model.Prospect{}, fmt.Errorf("contact_status inválido")
 	}
 
+	outcome := strings.TrimSpace(req.ContactOutcome)
+	notes := strings.TrimSpace(req.ContactNotes)
+	if contactStatus == model.ContactStatusNotContacted {
+		outcome = ""
+		notes = ""
+	} else {
+		if outcome == "" {
+			outcome = existing.ContactOutcome
+		}
+		if notes == "" {
+			notes = existing.ContactNotes
+		}
+	}
+	if !model.ValidContactOutcome(outcome) {
+		return model.Prospect{}, fmt.Errorf("contact_outcome inválido")
+	}
+
 	visitDate := strings.TrimSpace(req.VisitDate)
 	if req.ClearVisitDate {
 		visitDate = ""
@@ -172,6 +189,8 @@ func (s *Store) Upsert(ctx context.Context, identity model.VisitorIdentity, plac
 		Longitude:       req.Longitude,
 		OpenNow:         req.OpenNow,
 		ContactStatus:   contactStatus,
+		ContactOutcome:  outcome,
+		ContactNotes:    notes,
 		VisitDate:       visitDate,
 		CreatedAt:       createdAt,
 		UpdatedAt:       now,
@@ -251,14 +270,23 @@ func (s *Store) Delete(ctx context.Context, uid, placeID string) error {
 	return nil
 }
 
-func (s *Store) UpdateContactStatus(ctx context.Context, uid, placeID, contactStatus string) error {
+func (s *Store) UpdateContactStatus(ctx context.Context, uid, placeID, contactStatus, outcome, notes string) error {
 	placeID = strings.TrimSpace(placeID)
 	contactStatus = strings.TrimSpace(contactStatus)
+	outcome = strings.TrimSpace(outcome)
+	notes = strings.TrimSpace(notes)
 	if placeID == "" {
 		return fmt.Errorf("place_id vacío")
 	}
 	if !model.ValidContactStatus(contactStatus) {
 		return fmt.Errorf("contact_status inválido")
+	}
+	if contactStatus == model.ContactStatusNotContacted {
+		outcome = ""
+		notes = ""
+	}
+	if !model.ValidContactOutcome(outcome) {
+		return fmt.Errorf("contact_outcome inválido")
 	}
 
 	ref := s.col(uid).Doc(sanitizePlaceID(placeID))
@@ -272,6 +300,8 @@ func (s *Store) UpdateContactStatus(ctx context.Context, uid, placeID, contactSt
 
 	_, err = ref.Update(ctx, []firestore.Update{
 		{Path: "contact_status", Value: contactStatus},
+		{Path: "contact_outcome", Value: outcome},
+		{Path: "contact_notes", Value: notes},
 		{Path: "updated_at", Value: time.Now().UTC()},
 	})
 	if err != nil {

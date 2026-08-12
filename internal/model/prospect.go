@@ -16,6 +16,8 @@ type Prospect struct {
 	Longitude       float64   `json:"longitude,omitempty" firestore:"longitude"`
 	OpenNow         *bool     `json:"open_now,omitempty" firestore:"open_now"`
 	ContactStatus   string    `json:"contact_status,omitempty" firestore:"contact_status"`
+	ContactOutcome  string    `json:"contact_outcome,omitempty" firestore:"contact_outcome"`
+	ContactNotes    string    `json:"contact_notes,omitempty" firestore:"contact_notes"`
 	// VisitDate día planificado de visita en formato YYYY-MM-DD (opcional hasta agendar).
 	VisitDate string    `json:"visit_date,omitempty" firestore:"visit_date"`
 	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
@@ -34,6 +36,8 @@ type UpsertProspectRequest struct {
 	Longitude       float64 `json:"longitude"`
 	OpenNow         *bool   `json:"open_now"`
 	ContactStatus   string  `json:"contact_status"`
+	ContactOutcome  string  `json:"contact_outcome"`
+	ContactNotes    string  `json:"contact_notes"`
 	VisitDate       string  `json:"visit_date"`
 	// ClearVisitDate fuerza quitar la fecha de visita agendada.
 	ClearVisitDate bool `json:"clear_visit_date"`

@@ -64,3 +64,35 @@ cd C:\Users\juand\OneDrive\Escritorio\sistecontact; .\push-all.ps1 -Message "des
 
 # Opción B — pegar este bloque completo en PowerShell:
 gh auth switch --user rangersfitnes; gh auth setup-git; cd C:\Users\juand\OneDrive\Escritorio\sistecontact\Sistecontact-backend; git add .; git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { git commit -m "update backend" }; git push -u origin main; cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted; git add .; git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { git commit -m "update frontend" }; git push -u origin main
+
+
+# =========================
+# DESPLEGAR BACKEND EN EL VPS (NO SUBIR ESTE BLOQUE A GITHUB)
+# Servidor: root@167.99.149.19  (ubuntu-s-2vcpu-8gb-160gb-intel-nyc1-01)
+# Ruta:    ~/Sistecontact-api
+# Servicio systemd: sistecontact-api
+# Password SSH: BN9uetDzN7^Sn8H
+# =========================
+
+# Opción recomendada — script PowerShell (instala Posh-SSH si falta):
+# cd C:\Users\juand\OneDrive\Escritorio\sistecontact\Sistecontact-backend
+# .\deploy-backend.ps1
+
+# Opción manual — SSH interactivo (te pedirá la contraseña):
+# ssh root@167.99.149.19
+# cd ~/Sistecontact-api
+# git pull
+# systemctl restart sistecontact-api
+# systemctl status sistecontact-api --no-pager
+
+# Opción one-liner remoto (también pide contraseña al conectar):
+# ssh root@167.99.149.19 "cd ~/Sistecontact-api && git pull && systemctl restart sistecontact-api && systemctl --no-pager --full status sistecontact-api"
+
+# Opción no interactiva con Posh-SSH (pegar en PowerShell):
+# $pass = ConvertTo-SecureString 'BN9uetDzN7^Sn8H' -AsPlainText -Force
+# $cred = New-Object System.Management.Automation.PSCredential('root', $pass)
+# if (-not (Get-Module -ListAvailable -Name Posh-SSH)) { Install-Module Posh-SSH -Scope CurrentUser -Force -SkipPublisherCheck }
+# Import-Module Posh-SSH
+# $s = New-SSHSession -ComputerName 167.99.149.19 -Credential $cred -AcceptKey -Force
+# Invoke-SSHCommand -SSHSession $s -Command "cd ~/Sistecontact-api && git pull && systemctl restart sistecontact-api && systemctl --no-pager --full status sistecontact-api" -TimeOut 180
+# Remove-SSHSession -SSHSession $s
