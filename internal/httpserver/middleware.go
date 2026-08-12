@@ -50,12 +50,24 @@ func recoverPanic(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// cors permite peticiones desde el frontend (dev).
+var allowedOrigins = map[string]struct{}{
+	"https://sistecontact.nodefex.com": {},
+	"http://localhost:5173":            {},
+	"http://127.0.0.1:5173":            {},
+}
+
+// cors autoriza el frontend de producción y el de desarrollo local.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if _, ok := allowedOrigins[origin]; ok {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
+		w.Header().Set("Access-Control-Max-Age", "86400")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
