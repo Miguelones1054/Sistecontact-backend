@@ -3,6 +3,7 @@ package prospects
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,72 @@ func (s *Store) globalSchedulers(placeID string) *firestore.CollectionRef {
 
 func sanitizePlaceID(placeID string) string {
 	return strings.ReplaceAll(placeID, "/", "_")
+}
+
+func validateClockTime(field, value string) error {
+	if _, err := time.Parse("15:04", value); err != nil {
+		return fmt.Errorf("%s inválida (usa HH:MM)", field)
+	}
+	return nil
+}
+
+func parseAppointmentDateTime(date, clock string) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02 15:04", date+" "+clock, time.Local)
+}
+
+func (s *Store) ensureAppointmentSlotFree(
+	ctx context.Context,
+	uid, placeID, date, clock string,
+	intervalMinutes int,
+) error {
+	intervalMinutes = model.NormalizeAppointmentInterval(intervalMinutes)
+	newAt, err := parseAppointmentDateTime(date, clock)
+	if err != nil {
+		return fmt.Errorf("fecha/hora de cita inválida")
+	}
+
+	items, err := s.List(ctx, uid)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.PlaceID == placeID {
+			continue
+		}
+
+		check := func(otherDate, otherTime string) error {
+			if otherDate == "" || otherTime == "" {
+				return nil
+			}
+			existingAt, err := parseAppointmentDateTime(otherDate, otherTime)
+			if err != nil {
+				return nil
+			}
+			diff := int(math.Abs(newAt.Sub(existingAt).Minutes()))
+			if diff < intervalMinutes {
+				name := strings.TrimSpace(item.Name)
+				if name == "" {
+					name = item.PlaceID
+				}
+				return fmt.Errorf(
+					"la cita se cruza con otra visita agendada el %s a las %s con \"%s\" (intervalo mínimo: %d min)",
+					otherDate,
+					otherTime,
+					name,
+					intervalMinutes,
+				)
+			}
+			return nil
+		}
+
+		if err := check(item.CallDate, item.CallTime); err != nil {
+			return err
+		}
+		if err := check(item.VisitDate, item.VisitTime); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) List(ctx context.Context, uid string) ([]model.Prospect, error) {
@@ -113,7 +180,13 @@ func (s *Store) ListGlobalSchedulers(ctx context.Context, placeID string) ([]mod
 	return out, nil
 }
 
-func (s *Store) Upsert(ctx context.Context, identity model.VisitorIdentity, placeID string, req model.UpsertProspectRequest) (model.Prospect, error) {
+func (s *Store) Upsert(
+	ctx context.Context,
+	identity model.VisitorIdentity,
+	placeID string,
+	req model.UpsertProspectRequest,
+	appointmentIntervalMinutes int,
+) (model.Prospect, error) {
 	placeID = strings.TrimSpace(placeID)
 	if placeID == "" {
 		return model.Prospect{}, fmt.Errorf("place_id vacío")
@@ -165,15 +238,103 @@ func (s *Store) Upsert(ctx context.Context, identity model.VisitorIdentity, plac
 		return model.Prospect{}, fmt.Errorf("contact_outcome inválido")
 	}
 
-	visitDate := strings.TrimSpace(req.VisitDate)
+	visitDate := existing.VisitDate
+	visitTime := existing.VisitTime
+	reqVisitDate := strings.TrimSpace(req.VisitDate)
+	reqVisitTime := strings.TrimSpace(req.VisitTime)
 	if req.ClearVisitDate {
 		visitDate = ""
-	} else if visitDate == "" {
-		visitDate = existing.VisitDate
+		visitTime = ""
+	} else {
+		if reqVisitDate != "" {
+			visitDate = reqVisitDate
+		}
+		if reqVisitTime != "" {
+			visitTime = reqVisitTime
+		}
 	}
 	if visitDate != "" {
 		if _, err := time.Parse("2006-01-02", visitDate); err != nil {
 			return model.Prospect{}, fmt.Errorf("visit_date inválida (usa YYYY-MM-DD)")
+		}
+	}
+	if visitTime != "" {
+		if err := validateClockTime("visit_time", visitTime); err != nil {
+			return model.Prospect{}, err
+		}
+	}
+	schedulingVisit := !req.ClearVisitDate && (reqVisitDate != "" || reqVisitTime != "")
+	if schedulingVisit {
+		if visitDate == "" {
+			return model.Prospect{}, fmt.Errorf("visit_date es obligatoria al agendar una visita")
+		}
+		if visitTime == "" {
+			return model.Prospect{}, fmt.Errorf("visit_time es obligatoria al agendar una visita")
+		}
+	}
+	if visitDate == "" {
+		visitTime = ""
+	}
+
+	callDate := existing.CallDate
+	callTime := existing.CallTime
+	reqCallDate := strings.TrimSpace(req.CallDate)
+	reqCallTime := strings.TrimSpace(req.CallTime)
+	if req.ClearCallDate {
+		callDate = ""
+		callTime = ""
+	} else {
+		if reqCallDate != "" {
+			callDate = reqCallDate
+		}
+		if reqCallTime != "" {
+			callTime = reqCallTime
+		}
+	}
+	if callDate != "" {
+		if _, err := time.Parse("2006-01-02", callDate); err != nil {
+			return model.Prospect{}, fmt.Errorf("call_date inválida (usa YYYY-MM-DD)")
+		}
+	}
+	if callTime != "" {
+		if err := validateClockTime("call_time", callTime); err != nil {
+			return model.Prospect{}, err
+		}
+	}
+	schedulingCall := !req.ClearCallDate && (reqCallDate != "" || reqCallTime != "")
+	if schedulingCall {
+		if callDate == "" {
+			return model.Prospect{}, fmt.Errorf("call_date es obligatoria al agendar una llamada")
+		}
+		if callTime == "" {
+			return model.Prospect{}, fmt.Errorf("call_time es obligatoria al agendar una llamada")
+		}
+	}
+	if callDate == "" {
+		callTime = ""
+	}
+	if callDate != "" && callTime != "" {
+		if err := s.ensureAppointmentSlotFree(
+			ctx,
+			identity.UID,
+			placeID,
+			callDate,
+			callTime,
+			appointmentIntervalMinutes,
+		); err != nil {
+			return model.Prospect{}, err
+		}
+	}
+	if visitDate != "" && visitTime != "" {
+		if err := s.ensureAppointmentSlotFree(
+			ctx,
+			identity.UID,
+			placeID,
+			visitDate,
+			visitTime,
+			appointmentIntervalMinutes,
+		); err != nil {
+			return model.Prospect{}, err
 		}
 	}
 
@@ -192,6 +353,9 @@ func (s *Store) Upsert(ctx context.Context, identity model.VisitorIdentity, plac
 		ContactOutcome:  outcome,
 		ContactNotes:    notes,
 		VisitDate:       visitDate,
+		VisitTime:       visitTime,
+		CallDate:        callDate,
+		CallTime:        callTime,
 		CreatedAt:       createdAt,
 		UpdatedAt:       now,
 	}

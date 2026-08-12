@@ -9,6 +9,7 @@ import (
 	"github.com/sistecontact/api/internal/model"
 	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
+	"github.com/sistecontact/api/internal/usersettings"
 	"github.com/sistecontact/api/internal/visits"
 )
 
@@ -17,6 +18,7 @@ type Handler struct {
 	visits        *visits.Store
 	prospects     *prospects.Store
 	contactStatus *contactstatus.Store
+	settings      *usersettings.Store
 }
 
 func NewHandler(
@@ -24,12 +26,14 @@ func NewHandler(
 	visitStore *visits.Store,
 	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
+	settingsStore *usersettings.Store,
 ) *Handler {
 	return &Handler{
 		svc:           svc,
 		visits:        visitStore,
 		prospects:     prospectStore,
 		contactStatus: contactStore,
+		settings:      settingsStore,
 	}
 }
 
@@ -260,10 +264,29 @@ func (h *Handler) upsertProspect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.prospects.Upsert(r.Context(), identity, placeID, req)
+	settings, err := h.settings.GetScheduling(r.Context(), identity.UID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	item, err := h.prospects.Upsert(
+		r.Context(),
+		identity,
+		placeID,
+		req,
+		settings.AppointmentIntervalMinutes,
+	)
 	if err != nil {
 		msg := err.Error()
-		if strings.Contains(msg, "visit_date") || strings.Contains(msg, "contact_status") || strings.Contains(msg, "name es obligatorio") {
+		if strings.Contains(msg, "visit_date") ||
+			strings.Contains(msg, "visit_time") ||
+			strings.Contains(msg, "call_date") ||
+			strings.Contains(msg, "call_time") ||
+			strings.Contains(msg, "ya tienes una llamada") ||
+			strings.Contains(msg, "se cruza con otra") ||
+			strings.Contains(msg, "contact_status") ||
+			strings.Contains(msg, "name es obligatorio") {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -361,5 +384,49 @@ func (h *Handler) upsertContactStatus(w http.ResponseWriter, r *http.Request) {
 		item.ContactOutcome,
 		item.ContactNotes,
 	)
+	writeJSON(w, http.StatusOK, item)
+}
+
+// GET /api/settings/scheduling
+func (h *Handler) getSchedulingSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := uidFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "no autenticado")
+		return
+	}
+
+	item, err := h.settings.GetScheduling(r.Context(), uid)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	writeJSON(w, http.StatusOK, item)
+}
+
+// PUT /api/settings/scheduling
+func (h *Handler) upsertSchedulingSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := uidFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "no autenticado")
+		return
+	}
+
+	var req model.UpsertSchedulingSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "JSON inválido")
+		return
+	}
+
+	item, err := h.settings.UpsertScheduling(r.Context(), uid, req)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "appointment_interval_minutes") {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		writeError(w, http.StatusBadGateway, msg)
+		return
+	}
 	writeJSON(w, http.StatusOK, item)
 }

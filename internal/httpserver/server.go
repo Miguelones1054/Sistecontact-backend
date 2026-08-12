@@ -10,6 +10,7 @@ import (
 	"github.com/sistecontact/api/internal/contactstatus"
 	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
+	"github.com/sistecontact/api/internal/usersettings"
 	"github.com/sistecontact/api/internal/visits"
 )
 
@@ -24,10 +25,11 @@ func New(
 	visitStore *visits.Store,
 	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
+	settingsStore *usersettings.Store,
 	authClient *auth.Client,
 	logger *slog.Logger,
 ) *Server {
-	h := NewHandler(svc, visitStore, prospectStore, contactStore)
+	h := NewHandler(svc, visitStore, prospectStore, contactStore, settingsStore)
 	authMW := requireAuth(authClient)
 
 	mux := http.NewServeMux()
@@ -47,6 +49,9 @@ func New(
 
 	mux.Handle("GET /api/contact-status", authMW(http.HandlerFunc(h.listContactStatus)))
 	mux.Handle("PUT /api/contact-status/{placeId}", authMW(http.HandlerFunc(h.upsertContactStatus)))
+
+	mux.Handle("GET /api/settings/scheduling", authMW(http.HandlerFunc(h.getSchedulingSettings)))
+	mux.Handle("PUT /api/settings/scheduling", authMW(http.HandlerFunc(h.upsertSchedulingSettings)))
 
 	stack := chain(mux, cors, recoverPanic(logger), logging(logger))
 

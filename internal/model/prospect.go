@@ -19,7 +19,13 @@ type Prospect struct {
 	ContactOutcome  string    `json:"contact_outcome,omitempty" firestore:"contact_outcome"`
 	ContactNotes    string    `json:"contact_notes,omitempty" firestore:"contact_notes"`
 	// VisitDate día planificado de visita en formato YYYY-MM-DD (opcional hasta agendar).
-	VisitDate string    `json:"visit_date,omitempty" firestore:"visit_date"`
+	VisitDate string `json:"visit_date,omitempty" firestore:"visit_date"`
+	// VisitTime hora planificada de visita en formato HH:MM (según intervalo del usuario).
+	VisitTime string `json:"visit_time,omitempty" firestore:"visit_time"`
+	// CallDate día planificado de llamada en formato YYYY-MM-DD (opcional hasta agendar).
+	CallDate string `json:"call_date,omitempty" firestore:"call_date"`
+	// CallTime hora planificada de llamada en formato HH:MM.
+	CallTime  string    `json:"call_time,omitempty" firestore:"call_time"`
 	CreatedAt time.Time `json:"created_at" firestore:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" firestore:"updated_at"`
 }
@@ -38,9 +44,14 @@ type UpsertProspectRequest struct {
 	ContactStatus   string  `json:"contact_status"`
 	ContactOutcome  string  `json:"contact_outcome"`
 	ContactNotes    string  `json:"contact_notes"`
-	VisitDate       string  `json:"visit_date"`
-	// ClearVisitDate fuerza quitar la fecha de visita agendada.
-	ClearVisitDate bool `json:"clear_visit_date"`
+	VisitDate       string `json:"visit_date"`
+	VisitTime       string `json:"visit_time"`
+	// ClearVisitDate fuerza quitar la fecha/hora de visita agendada.
+	ClearVisitDate bool   `json:"clear_visit_date"`
+	CallDate       string `json:"call_date"`
+	CallTime       string `json:"call_time"`
+	// ClearCallDate fuerza quitar la fecha/hora de llamada agendada.
+	ClearCallDate bool `json:"clear_call_date"`
 }
 
 // GlobalScheduledVisit es la cita programada visible entre asesores.
