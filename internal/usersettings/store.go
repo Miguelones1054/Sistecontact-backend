@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Store: users/{uid}/settings/scheduling
+// Store: users/{uid}/settings/{scheduling|access}
 type Store struct {
 	db *firestore.Client
 }
@@ -22,6 +22,43 @@ func NewStore(db *firestore.Client) *Store {
 
 func (s *Store) schedulingRef(uid string) *firestore.DocumentRef {
 	return s.db.Collection("users").Doc(uid).Collection("settings").Doc("scheduling")
+}
+
+func (s *Store) accessRef(uid string) *firestore.DocumentRef {
+	return s.db.Collection("users").Doc(uid).Collection("settings").Doc("access")
+}
+
+// GetOrCreateAccess lee users/{uid}/settings/access.
+// Si no existe, lo crea con sistecontact_enabled=false.
+func (s *Store) GetOrCreateAccess(ctx context.Context, uid string) (model.AccessSettings, error) {
+	if uid == "" {
+		return model.AccessSettings{}, fmt.Errorf("uid vacío")
+	}
+
+	ref := s.accessRef(uid)
+	doc, err := ref.Get(ctx)
+	if err != nil {
+		if status.Code(err) != codes.NotFound {
+			return model.AccessSettings{}, fmt.Errorf("leer acceso: %w", err)
+		}
+		item := model.AccessSettings{
+			SistecontactEnabled: false,
+			UpdatedAt:           time.Now().UTC(),
+		}
+		if _, err := ref.Set(ctx, item); err != nil {
+			return model.AccessSettings{}, fmt.Errorf("crear acceso: %w", err)
+		}
+		return item, nil
+	}
+
+	var item model.AccessSettings
+	if err := doc.DataTo(&item); err != nil {
+		return model.AccessSettings{
+			SistecontactEnabled: false,
+			UpdatedAt:           time.Now().UTC(),
+		}, nil
+	}
+	return item, nil
 }
 
 func (s *Store) GetScheduling(ctx context.Context, uid string) (model.SchedulingSettings, error) {

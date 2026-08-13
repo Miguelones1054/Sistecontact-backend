@@ -418,6 +418,23 @@ func (h *Handler) upsertContactStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
+// GET /api/settings/access
+func (h *Handler) getAccessSettings(w http.ResponseWriter, r *http.Request) {
+	uid, ok := uidFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "no autenticado")
+		return
+	}
+
+	item, err := h.settings.GetOrCreateAccess(r.Context(), uid)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	writeJSON(w, http.StatusOK, item)
+}
+
 // GET /api/settings/scheduling
 func (h *Handler) getSchedulingSettings(w http.ResponseWriter, r *http.Request) {
 	uid, ok := uidFromContext(r.Context())

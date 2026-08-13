@@ -7,6 +7,7 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/sistecontact/api/internal/model"
+	"github.com/sistecontact/api/internal/usersettings"
 )
 
 type ctxKey string
@@ -64,6 +65,30 @@ func requireAuth(authClient *auth.Client) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, emailKey, email)
 			ctx = context.WithValue(ctx, displayNameKey, name)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// requireAccess exige users/{uid}/settings/access.sistecontact_enabled == true.
+// Si el documento no existe, lo crea con false y deniega el acceso.
+func requireAccess(settings *usersettings.Store) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uid, ok := uidFromContext(r.Context())
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "token de autenticación requerido")
+				return
+			}
+			access, err := settings.GetOrCreateAccess(r.Context(), uid)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "no se pudo verificar el acceso")
+				return
+			}
+			if !access.SistecontactEnabled {
+				writeError(w, http.StatusForbidden, "no tienes membresía activa. Actívala en www.nodefex.com/sistecontact")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

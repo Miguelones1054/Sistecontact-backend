@@ -46,32 +46,38 @@ func New(
 		calendarTZ,
 	)
 	authMW := requireAuth(authClient)
+	accessMW := func(next http.Handler) http.Handler {
+		return authMW(requireAccess(settingsStore)(next))
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/zones", h.zones)
 	mux.HandleFunc("GET /api/search", h.search)
 
-	mux.Handle("GET /api/visits", authMW(http.HandlerFunc(h.listVisits)))
-	mux.Handle("PUT /api/visits/{placeId}", authMW(http.HandlerFunc(h.upsertVisit)))
-	mux.Handle("DELETE /api/visits/{placeId}", authMW(http.HandlerFunc(h.deleteVisit)))
-	mux.Handle("GET /api/businesses/{placeId}/visitors", authMW(http.HandlerFunc(h.listBusinessVisitors)))
-	mux.Handle("GET /api/businesses/{placeId}/scheduled", authMW(http.HandlerFunc(h.listBusinessScheduled)))
+	// Solo auth: crea el doc de acceso si falta y permite leer el flag (sin exigir true).
+	mux.Handle("GET /api/settings/access", authMW(http.HandlerFunc(h.getAccessSettings)))
 
-	mux.Handle("GET /api/prospects", authMW(http.HandlerFunc(h.listProspects)))
-	mux.Handle("PUT /api/prospects/{placeId}", authMW(http.HandlerFunc(h.upsertProspect)))
-	mux.Handle("DELETE /api/prospects/{placeId}", authMW(http.HandlerFunc(h.deleteProspect)))
+	mux.Handle("GET /api/visits", accessMW(http.HandlerFunc(h.listVisits)))
+	mux.Handle("PUT /api/visits/{placeId}", accessMW(http.HandlerFunc(h.upsertVisit)))
+	mux.Handle("DELETE /api/visits/{placeId}", accessMW(http.HandlerFunc(h.deleteVisit)))
+	mux.Handle("GET /api/businesses/{placeId}/visitors", accessMW(http.HandlerFunc(h.listBusinessVisitors)))
+	mux.Handle("GET /api/businesses/{placeId}/scheduled", accessMW(http.HandlerFunc(h.listBusinessScheduled)))
 
-	mux.Handle("GET /api/contact-status", authMW(http.HandlerFunc(h.listContactStatus)))
-	mux.Handle("PUT /api/contact-status/{placeId}", authMW(http.HandlerFunc(h.upsertContactStatus)))
+	mux.Handle("GET /api/prospects", accessMW(http.HandlerFunc(h.listProspects)))
+	mux.Handle("PUT /api/prospects/{placeId}", accessMW(http.HandlerFunc(h.upsertProspect)))
+	mux.Handle("DELETE /api/prospects/{placeId}", accessMW(http.HandlerFunc(h.deleteProspect)))
 
-	mux.Handle("GET /api/settings/scheduling", authMW(http.HandlerFunc(h.getSchedulingSettings)))
-	mux.Handle("PUT /api/settings/scheduling", authMW(http.HandlerFunc(h.upsertSchedulingSettings)))
+	mux.Handle("GET /api/contact-status", accessMW(http.HandlerFunc(h.listContactStatus)))
+	mux.Handle("PUT /api/contact-status/{placeId}", accessMW(http.HandlerFunc(h.upsertContactStatus)))
 
-	mux.Handle("GET /api/integrations/google-calendar", authMW(http.HandlerFunc(h.googleCalendarStatus)))
-	mux.Handle("GET /api/integrations/google-calendar/connect", authMW(http.HandlerFunc(h.googleCalendarConnect)))
+	mux.Handle("GET /api/settings/scheduling", accessMW(http.HandlerFunc(h.getSchedulingSettings)))
+	mux.Handle("PUT /api/settings/scheduling", accessMW(http.HandlerFunc(h.upsertSchedulingSettings)))
+
+	mux.Handle("GET /api/integrations/google-calendar", accessMW(http.HandlerFunc(h.googleCalendarStatus)))
+	mux.Handle("GET /api/integrations/google-calendar/connect", accessMW(http.HandlerFunc(h.googleCalendarConnect)))
 	mux.HandleFunc("GET /api/integrations/google-calendar/callback", h.googleCalendarCallback)
-	mux.Handle("DELETE /api/integrations/google-calendar", authMW(http.HandlerFunc(h.googleCalendarDisconnect)))
+	mux.Handle("DELETE /api/integrations/google-calendar", accessMW(http.HandlerFunc(h.googleCalendarDisconnect)))
 
 	stack := chain(mux, cors, recoverPanic(logger), logging(logger))
 
