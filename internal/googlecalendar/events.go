@@ -8,7 +8,10 @@ import (
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+
+	_ "time/tzdata" // zonas horarias embebidas (necesario en Windows / contenedores mínimos)
 )
 
 const DefaultTimeZone = "America/Bogota"
@@ -66,16 +69,19 @@ func (c *Client) calendarService(ctx context.Context, uid string) (*calendar.Ser
 		TokenType:    doc.TokenType,
 		Expiry:       doc.Expiry,
 	}
+	if tok.TokenType == "" {
+		tok.TokenType = "Bearer"
+	}
 	ts := c.oauth.Config.TokenSource(ctx, tok)
 	fresh, err := ts.Token()
 	if err != nil {
-		return nil, fmt.Errorf("token Google Calendar: %w", err)
+		return nil, fmt.Errorf("token Google Calendar inválido o revocado (vuelve a conectar en Mi perfil): %w", err)
 	}
 	if fresh.AccessToken != doc.AccessToken || (!fresh.Expiry.IsZero() && !fresh.Expiry.Equal(doc.Expiry)) {
 		_ = c.store.Save(ctx, uid, doc.Email, fresh, doc.Scope)
 	}
 
-	svc, err := calendar.NewService(ctx, option.WithTokenSource(ts))
+	svc, err := calendar.NewService(ctx, option.WithTokenSource(oauth2.ReuseTokenSource(fresh, ts)))
 	if err != nil {
 		return nil, fmt.Errorf("cliente Google Calendar: %w", err)
 	}
@@ -103,15 +109,21 @@ func (c *Client) UpsertEvent(ctx context.Context, uid string, appt AppointmentEv
 
 	if strings.TrimSpace(appt.ExistingEventID) != "" {
 		updated, err := svc.Events.Patch("primary", appt.ExistingEventID, ev).Context(ctx).Do()
-		if err == nil {
+		if err == nil && updated != nil && updated.Id != "" {
 			return updated.Id, nil
 		}
-		// Si el evento ya no existe, crear uno nuevo.
+		// Si el evento ya no existe u otro error recuperable, crear uno nuevo.
+		if err != nil && !isNotFound(err) {
+			// Intentar insert de todos modos más abajo; si también falla, se reporta.
+		}
 	}
 
 	created, err := svc.Events.Insert("primary", ev).Context(ctx).Do()
 	if err != nil {
-		return "", fmt.Errorf("crear evento Calendar: %w", err)
+		return "", fmt.Errorf("crear evento Calendar: %s", formatAPIError(err))
+	}
+	if created == nil || created.Id == "" {
+		return "", fmt.Errorf("crear evento Calendar: respuesta vacía")
 	}
 	return created.Id, nil
 }
@@ -134,7 +146,7 @@ func (c *Client) DeleteEvent(ctx context.Context, uid, eventID string) error {
 	}
 	err = svc.Events.Delete("primary", eventID).Context(ctx).Do()
 	if err != nil && !isNotFound(err) {
-		return fmt.Errorf("eliminar evento Calendar: %w", err)
+		return fmt.Errorf("eliminar evento Calendar: %s", formatAPIError(err))
 	}
 	return nil
 }
@@ -154,7 +166,8 @@ func buildEvent(appt AppointmentEvent) (*calendar.Event, error) {
 		dur = 60
 	}
 
-	start, err := time.ParseInLocation("2006-01-02 15:04", date+" "+clock, locationOrLocal(tz))
+	loc := locationOrLocal(tz)
+	start, err := time.ParseInLocation("2006-01-02 15:04", date+" "+clock, loc)
 	if err != nil {
 		return nil, fmt.Errorf("fecha/hora de evento inválida")
 	}
@@ -179,16 +192,17 @@ func buildEvent(appt AppointmentEvent) (*calendar.Event, error) {
 		descParts = append(descParts, "Teléfono: "+phone)
 	}
 
+	// dateTime local + timeZone (recomendado por Google Calendar API).
 	ev := &calendar.Event{
 		Summary:     fmt.Sprintf("%s — %s", kindLabel, name),
 		Description: strings.Join(descParts, "\n"),
 		Location:    strings.TrimSpace(appt.Address),
 		Start: &calendar.EventDateTime{
-			DateTime: start.Format(time.RFC3339),
+			DateTime: start.Format("2006-01-02T15:04:05"),
 			TimeZone: tz,
 		},
 		End: &calendar.EventDateTime{
-			DateTime: end.Format(time.RFC3339),
+			DateTime: end.Format("2006-01-02T15:04:05"),
 			TimeZone: tz,
 		},
 		Reminders: &calendar.EventReminders{
@@ -215,6 +229,23 @@ func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
+	if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == 404 {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "404") || strings.Contains(msg, "not found") || strings.Contains(msg, "notFound")
+	return strings.Contains(msg, "404") || strings.Contains(msg, "not found") || strings.Contains(msg, "notfound")
+}
+
+func formatAPIError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if gerr, ok := err.(*googleapi.Error); ok {
+		msg := strings.TrimSpace(gerr.Message)
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Sprintf("HTTP %d: %s", gerr.Code, msg)
+	}
+	return err.Error()
 }

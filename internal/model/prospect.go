@@ -29,9 +29,13 @@ type Prospect struct {
 	// CallGoogleEventID ID del evento en Google Calendar (llamada).
 	CallGoogleEventID string `json:"call_google_event_id,omitempty" firestore:"call_google_event_id,omitempty"`
 	// VisitGoogleEventID ID del evento en Google Calendar (visita).
-	VisitGoogleEventID string    `json:"visit_google_event_id,omitempty" firestore:"visit_google_event_id,omitempty"`
-	CreatedAt          time.Time `json:"created_at" firestore:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at" firestore:"updated_at"`
+	VisitGoogleEventID string `json:"visit_google_event_id,omitempty" firestore:"visit_google_event_id,omitempty"`
+	// CalendarSyncStatus: synced | skipped | error (solo respuesta API, no Firestore).
+	CalendarSyncStatus string `json:"calendar_sync_status,omitempty" firestore:"-"`
+	// CalendarSyncError detalle si falló la sync con Calendar.
+	CalendarSyncError string    `json:"calendar_sync_error,omitempty" firestore:"-"`
+	CreatedAt         time.Time `json:"created_at" firestore:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at" firestore:"updated_at"`
 }
 
 // UpsertProspectRequest body para agregar/actualizar un prospecto.
