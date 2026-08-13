@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sistecontact/api/internal/contactstatus"
+	"github.com/sistecontact/api/internal/googlecalendar"
 	"github.com/sistecontact/api/internal/model"
 	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
@@ -19,6 +20,8 @@ type Handler struct {
 	prospects     *prospects.Store
 	contactStatus *contactstatus.Store
 	settings      *usersettings.Store
+	gcalStore     *googlecalendar.Store
+	gcalOAuth     *googlecalendar.OAuth
 }
 
 func NewHandler(
@@ -27,6 +30,8 @@ func NewHandler(
 	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
 	settingsStore *usersettings.Store,
+	gcalStore *googlecalendar.Store,
+	gcalOAuth *googlecalendar.OAuth,
 ) *Handler {
 	return &Handler{
 		svc:           svc,
@@ -34,6 +39,8 @@ func NewHandler(
 		prospects:     prospectStore,
 		contactStatus: contactStore,
 		settings:      settingsStore,
+		gcalStore:     gcalStore,
+		gcalOAuth:     gcalOAuth,
 	}
 }
 

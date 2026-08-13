@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/firestore v1.25.0
 	firebase.google.com/go/v4 v4.21.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.287.1
 	google.golang.org/grpc v1.82.1
 )
@@ -50,7 +51,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect

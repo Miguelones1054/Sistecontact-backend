@@ -12,6 +12,7 @@ import (
 	"github.com/sistecontact/api/internal/config"
 	"github.com/sistecontact/api/internal/contactstatus"
 	"github.com/sistecontact/api/internal/fireapp"
+	"github.com/sistecontact/api/internal/googlecalendar"
 	"github.com/sistecontact/api/internal/googlemaps"
 	"github.com/sistecontact/api/internal/httpserver"
 	"github.com/sistecontact/api/internal/prospects"
@@ -53,7 +54,31 @@ func main() {
 	prospectStore := prospects.NewStore(fb.Firestore)
 	contactStore := contactstatus.NewStore(fb.Firestore)
 	settingsStore := usersettings.NewStore(fb.Firestore)
-	srv := httpserver.New(":"+cfg.Port, svc, visitStore, prospectStore, contactStore, settingsStore, fb.Auth, logger)
+	gcalStore := googlecalendar.NewStore(fb.Firestore)
+	gcalOAuth := googlecalendar.NewOAuth(
+		cfg.GoogleOAuthClientID,
+		cfg.GoogleOAuthClientSecret,
+		cfg.GoogleOAuthRedirectURL,
+		cfg.GoogleOAuthStateSecret,
+		cfg.FrontendOrigin,
+	)
+	if gcalOAuth != nil && gcalOAuth.Configured() {
+		logger.Info("Google Calendar OAuth habilitado")
+	} else {
+		logger.Info("Google Calendar OAuth no configurado (faltan GOOGLE_OAUTH_CLIENT_ID/SECRET)")
+	}
+	srv := httpserver.New(
+		":"+cfg.Port,
+		svc,
+		visitStore,
+		prospectStore,
+		contactStore,
+		settingsStore,
+		gcalStore,
+		gcalOAuth,
+		fb.Auth,
+		logger,
+	)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

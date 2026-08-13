@@ -13,5 +13,8 @@ deploy-backend.ps1
 *firebase-adminsdk*.json
 *-firebase-adminsdk-*.json
 
+# Credenciales OAuth Google (secretas)
+client_secret*.json
+
 # Dependencias
 /vendor/

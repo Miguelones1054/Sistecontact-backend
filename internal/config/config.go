@@ -21,6 +21,11 @@ type Config struct {
 	GridMaxDepth            int
 	SearchWorkers           int
 	FirebaseCredentialsFile string
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+	GoogleOAuthRedirectURL  string
+	GoogleOAuthStateSecret  string
+	FrontendOrigin          string
 }
 
 func Load() (Config, error) {
@@ -47,6 +52,14 @@ func Load() (Config, error) {
 		GridMaxDepth:            intEnv("GRID_MAX_DEPTH", 3),
 		SearchWorkers:           intEnv("SEARCH_WORKERS", 4),
 		FirebaseCredentialsFile: env("FIREBASE_CREDENTIALS_FILE", "sistecontact-firebase-adminsdk-fbsvc-8adb9b6483.json"),
+		GoogleOAuthClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleOAuthClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		GoogleOAuthRedirectURL: env(
+			"GOOGLE_OAUTH_REDIRECT_URL",
+			"https://apisistecontact.nodefex.com/api/integrations/google-calendar/callback",
+		),
+		GoogleOAuthStateSecret: os.Getenv("GOOGLE_OAUTH_STATE_SECRET"),
+		FrontendOrigin:         env("FRONTEND_ORIGIN", "https://sistecontact.nodefex.com"),
 	}
 	return cfg, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/sistecontact/api/internal/contactstatus"
+	"github.com/sistecontact/api/internal/googlecalendar"
 	"github.com/sistecontact/api/internal/prospects"
 	"github.com/sistecontact/api/internal/search"
 	"github.com/sistecontact/api/internal/usersettings"
@@ -26,10 +27,12 @@ func New(
 	prospectStore *prospects.Store,
 	contactStore *contactstatus.Store,
 	settingsStore *usersettings.Store,
+	gcalStore *googlecalendar.Store,
+	gcalOAuth *googlecalendar.OAuth,
 	authClient *auth.Client,
 	logger *slog.Logger,
 ) *Server {
-	h := NewHandler(svc, visitStore, prospectStore, contactStore, settingsStore)
+	h := NewHandler(svc, visitStore, prospectStore, contactStore, settingsStore, gcalStore, gcalOAuth)
 	authMW := requireAuth(authClient)
 
 	mux := http.NewServeMux()
@@ -52,6 +55,11 @@ func New(
 
 	mux.Handle("GET /api/settings/scheduling", authMW(http.HandlerFunc(h.getSchedulingSettings)))
 	mux.Handle("PUT /api/settings/scheduling", authMW(http.HandlerFunc(h.upsertSchedulingSettings)))
+
+	mux.Handle("GET /api/integrations/google-calendar", authMW(http.HandlerFunc(h.googleCalendarStatus)))
+	mux.Handle("GET /api/integrations/google-calendar/connect", authMW(http.HandlerFunc(h.googleCalendarConnect)))
+	mux.HandleFunc("GET /api/integrations/google-calendar/callback", h.googleCalendarCallback)
+	mux.Handle("DELETE /api/integrations/google-calendar", authMW(http.HandlerFunc(h.googleCalendarDisconnect)))
 
 	stack := chain(mux, cors, recoverPanic(logger), logging(logger))
 

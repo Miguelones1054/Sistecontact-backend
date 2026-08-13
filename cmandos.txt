@@ -42,6 +42,22 @@ git push -u origin main
 
 
 # =========================
+# GOOGLE CALENDAR OAUTH
+# =========================
+# 1) Google Cloud Console → APIs y servicios → Credenciales → Crear cliente OAuth (Web)
+# 2) URI de redirección autorizada:
+#    https://apisistecontact.nodefex.com/api/integrations/google-calendar/callback
+#    (local) http://localhost:8080/api/integrations/google-calendar/callback
+# 3) En el .env del backend (local y VPS) agregar:
+#    GOOGLE_OAUTH_CLIENT_ID=...
+#    GOOGLE_OAUTH_CLIENT_SECRET=...
+#    GOOGLE_OAUTH_REDIRECT_URL=https://apisistecontact.nodefex.com/api/integrations/google-calendar/callback
+#    FRONTEND_ORIGIN=https://sistecontact.nodefex.com
+# 4) Habilitar Google Calendar API en el proyecto
+# 5) Tras cambiar .env en el VPS: redeploy / reiniciar sistecontact-api
+
+
+# =========================
 # Notas
 # =========================
 # - Si falla el push (403), ejecuta primero:
