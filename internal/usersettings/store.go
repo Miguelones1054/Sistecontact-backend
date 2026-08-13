@@ -3,6 +3,7 @@ package usersettings
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -28,6 +29,51 @@ func (s *Store) accessRef(uid string) *firestore.DocumentRef {
 	return s.db.Collection("users").Doc(uid).Collection("settings").Doc("access")
 }
 
+func parseSistecontactEnabled(data map[string]any) bool {
+	raw, ok := data["sistecontact_enabled"]
+	if !ok {
+		// Compatibilidad por si el otro proyecto usa otro nombre.
+		raw, ok = data["enabled"]
+		if !ok {
+			return false
+		}
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		s := strings.ToLower(strings.TrimSpace(v))
+		return s == "true" || s == "1" || s == "yes" || s == "si" || s == "sí"
+	case int64:
+		return v != 0
+	case int:
+		return v != 0
+	case float64:
+		return v != 0
+	default:
+		return false
+	}
+}
+
+func parseUpdatedAt(data map[string]any) time.Time {
+	raw, ok := data["updated_at"]
+	if !ok || raw == nil {
+		return time.Time{}
+	}
+	switch v := raw.(type) {
+	case time.Time:
+		return v
+	case string:
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			return t
+		}
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 // GetOrCreateAccess lee users/{uid}/settings/access.
 // Si no existe, lo crea con sistecontact_enabled=false.
 func (s *Store) GetOrCreateAccess(ctx context.Context, uid string) (model.AccessSettings, error) {
@@ -51,14 +97,11 @@ func (s *Store) GetOrCreateAccess(ctx context.Context, uid string) (model.Access
 		return item, nil
 	}
 
-	var item model.AccessSettings
-	if err := doc.DataTo(&item); err != nil {
-		return model.AccessSettings{
-			SistecontactEnabled: false,
-			UpdatedAt:           time.Now().UTC(),
-		}, nil
-	}
-	return item, nil
+	data := doc.Data()
+	return model.AccessSettings{
+		SistecontactEnabled: parseSistecontactEnabled(data),
+		UpdatedAt:           parseUpdatedAt(data),
+	}, nil
 }
 
 func (s *Store) GetScheduling(ctx context.Context, uid string) (model.SchedulingSettings, error) {
