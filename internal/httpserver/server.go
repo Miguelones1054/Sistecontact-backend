@@ -29,10 +29,22 @@ func New(
 	settingsStore *usersettings.Store,
 	gcalStore *googlecalendar.Store,
 	gcalOAuth *googlecalendar.OAuth,
+	gcalClient *googlecalendar.Client,
+	calendarTZ string,
 	authClient *auth.Client,
 	logger *slog.Logger,
 ) *Server {
-	h := NewHandler(svc, visitStore, prospectStore, contactStore, settingsStore, gcalStore, gcalOAuth)
+	h := NewHandler(
+		svc,
+		visitStore,
+		prospectStore,
+		contactStore,
+		settingsStore,
+		gcalStore,
+		gcalOAuth,
+		gcalClient,
+		calendarTZ,
+	)
 	authMW := requireAuth(authClient)
 
 	mux := http.NewServeMux()

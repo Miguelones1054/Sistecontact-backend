@@ -62,6 +62,7 @@ func main() {
 		cfg.GoogleOAuthStateSecret,
 		cfg.FrontendOrigin,
 	)
+	gcalClient := googlecalendar.NewClient(gcalOAuth, gcalStore)
 	if gcalOAuth != nil && gcalOAuth.Configured() {
 		logger.Info("Google Calendar OAuth habilitado")
 	} else {
@@ -76,6 +77,8 @@ func main() {
 		settingsStore,
 		gcalStore,
 		gcalOAuth,
+		gcalClient,
+		cfg.CalendarTimeZone,
 		fb.Auth,
 		logger,
 	)

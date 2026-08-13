@@ -26,6 +26,7 @@ type Config struct {
 	GoogleOAuthRedirectURL  string
 	GoogleOAuthStateSecret  string
 	FrontendOrigin          string
+	CalendarTimeZone        string
 }
 
 func Load() (Config, error) {
@@ -60,6 +61,7 @@ func Load() (Config, error) {
 		),
 		GoogleOAuthStateSecret: os.Getenv("GOOGLE_OAUTH_STATE_SECRET"),
 		FrontendOrigin:         env("FRONTEND_ORIGIN", "https://sistecontact.nodefex.com"),
+		CalendarTimeZone:       env("CALENDAR_TIMEZONE", "America/Bogota"),
 	}
 	return cfg, nil
 }

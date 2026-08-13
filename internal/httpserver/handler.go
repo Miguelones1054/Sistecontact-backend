@@ -22,6 +22,8 @@ type Handler struct {
 	settings      *usersettings.Store
 	gcalStore     *googlecalendar.Store
 	gcalOAuth     *googlecalendar.OAuth
+	gcalClient    *googlecalendar.Client
+	calendarTZ    string
 }
 
 func NewHandler(
@@ -32,7 +34,12 @@ func NewHandler(
 	settingsStore *usersettings.Store,
 	gcalStore *googlecalendar.Store,
 	gcalOAuth *googlecalendar.OAuth,
+	gcalClient *googlecalendar.Client,
+	calendarTZ string,
 ) *Handler {
+	if calendarTZ == "" {
+		calendarTZ = googlecalendar.DefaultTimeZone
+	}
 	return &Handler{
 		svc:           svc,
 		visits:        visitStore,
@@ -41,6 +48,8 @@ func NewHandler(
 		settings:      settingsStore,
 		gcalStore:     gcalStore,
 		gcalOAuth:     gcalOAuth,
+		gcalClient:    gcalClient,
+		calendarTZ:    calendarTZ,
 	}
 }
 
@@ -277,6 +286,8 @@ func (h *Handler) upsertProspect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	before, _ := h.prospects.Get(r.Context(), identity.UID, placeID)
+
 	item, err := h.prospects.Upsert(
 		r.Context(),
 		identity,
@@ -307,6 +318,16 @@ func (h *Handler) upsertProspect(w http.ResponseWriter, r *http.Request) {
 		ContactOutcome: item.ContactOutcome,
 		ContactNotes:   item.ContactNotes,
 	})
+
+	// Sincroniza Google Calendar si el usuario lo conectó (no bloquea el guardado local).
+	item = h.syncProspectGoogleCalendar(
+		r.Context(),
+		identity.UID,
+		before,
+		item,
+		settings.AppointmentIntervalMinutes,
+	)
+
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -323,6 +344,9 @@ func (h *Handler) deleteProspect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "place_id requerido")
 		return
 	}
+
+	before, _ := h.prospects.Get(r.Context(), uid, placeID)
+	h.deleteProspectGoogleCalendar(r.Context(), uid, before)
 
 	if err := h.prospects.Delete(r.Context(), uid, placeID); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())

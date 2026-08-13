@@ -339,25 +339,33 @@ func (s *Store) Upsert(
 	}
 
 	item := model.Prospect{
-		PlaceID:         placeID,
-		Name:            strings.TrimSpace(req.Name),
-		Address:         strings.TrimSpace(req.Address),
-		Phone:           strings.TrimSpace(req.Phone),
-		Rating:          req.Rating,
-		UserRatingCount: req.UserRatingCount,
-		GoogleMapsURI:   strings.TrimSpace(req.GoogleMapsURI),
-		Latitude:        req.Latitude,
-		Longitude:       req.Longitude,
-		OpenNow:         req.OpenNow,
-		ContactStatus:   contactStatus,
-		ContactOutcome:  outcome,
-		ContactNotes:    notes,
-		VisitDate:       visitDate,
-		VisitTime:       visitTime,
-		CallDate:        callDate,
-		CallTime:        callTime,
-		CreatedAt:       createdAt,
-		UpdatedAt:       now,
+		PlaceID:            placeID,
+		Name:               strings.TrimSpace(req.Name),
+		Address:            strings.TrimSpace(req.Address),
+		Phone:              strings.TrimSpace(req.Phone),
+		Rating:             req.Rating,
+		UserRatingCount:    req.UserRatingCount,
+		GoogleMapsURI:      strings.TrimSpace(req.GoogleMapsURI),
+		Latitude:           req.Latitude,
+		Longitude:          req.Longitude,
+		OpenNow:            req.OpenNow,
+		ContactStatus:      contactStatus,
+		ContactOutcome:     outcome,
+		ContactNotes:       notes,
+		VisitDate:          visitDate,
+		VisitTime:          visitTime,
+		CallDate:           callDate,
+		CallTime:           callTime,
+		CallGoogleEventID:  existing.CallGoogleEventID,
+		VisitGoogleEventID: existing.VisitGoogleEventID,
+		CreatedAt:          createdAt,
+		UpdatedAt:          now,
+	}
+	if callDate == "" {
+		item.CallGoogleEventID = ""
+	}
+	if visitDate == "" {
+		item.VisitGoogleEventID = ""
 	}
 	if item.Name == "" {
 		item.Name = existing.Name
@@ -389,6 +397,7 @@ func (s *Store) Upsert(
 	}
 
 	batch := s.db.Batch()
+	// Set sin merge: campos omitempty vacíos se eliminan del documento.
 	batch.Set(ref, item)
 
 	if visitDate != "" {
@@ -407,6 +416,7 @@ func (s *Store) Upsert(
 			UpdatedAt:    now,
 		})
 	} else {
+		// Si ya no hay visita agendada, eliminar el espejo global de la cita.
 		batch.Delete(globalRef)
 	}
 
@@ -414,6 +424,57 @@ func (s *Store) Upsert(
 		return model.Prospect{}, fmt.Errorf("guardar prospecto: %w", err)
 	}
 	return item, nil
+}
+
+func (s *Store) Get(ctx context.Context, uid, placeID string) (*model.Prospect, error) {
+	placeID = strings.TrimSpace(placeID)
+	if placeID == "" {
+		return nil, fmt.Errorf("place_id vacío")
+	}
+	if uid == "" {
+		return nil, fmt.Errorf("uid vacío")
+	}
+	doc, err := s.col(uid).Doc(sanitizePlaceID(placeID)).Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("leer prospecto: %w", err)
+	}
+	var item model.Prospect
+	if err := doc.DataTo(&item); err != nil {
+		return nil, fmt.Errorf("parsear prospecto: %w", err)
+	}
+	return &item, nil
+}
+
+func (s *Store) PatchGoogleEventIDs(
+	ctx context.Context,
+	uid, placeID, callEventID, visitEventID string,
+) error {
+	placeID = strings.TrimSpace(placeID)
+	if placeID == "" || uid == "" {
+		return fmt.Errorf("uid/place_id vacío")
+	}
+	ref := s.col(uid).Doc(sanitizePlaceID(placeID))
+	updates := []firestore.Update{
+		{Path: "updated_at", Value: time.Now().UTC()},
+	}
+	if strings.TrimSpace(callEventID) == "" {
+		updates = append(updates, firestore.Update{Path: "call_google_event_id", Value: firestore.Delete})
+	} else {
+		updates = append(updates, firestore.Update{Path: "call_google_event_id", Value: callEventID})
+	}
+	if strings.TrimSpace(visitEventID) == "" {
+		updates = append(updates, firestore.Update{Path: "visit_google_event_id", Value: firestore.Delete})
+	} else {
+		updates = append(updates, firestore.Update{Path: "visit_google_event_id", Value: visitEventID})
+	}
+	_, err := ref.Update(ctx, updates)
+	if err != nil {
+		return fmt.Errorf("guardar IDs de Calendar: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Delete(ctx context.Context, uid, placeID string) error {
