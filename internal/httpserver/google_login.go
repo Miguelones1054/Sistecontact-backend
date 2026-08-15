@@ -5,7 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -54,6 +58,122 @@ func (h *Handler) googleLoginComplete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"custom_token": token})
 }
 
+// POST /api/auth/google/session  { "id_token": "..." }
+func (h *Handler) googleLoginWithIDToken(w http.ResponseWriter, r *http.Request) {
+	if h.auth == nil {
+		writeError(w, http.StatusServiceUnavailable, "inicio de sesión con Google no configurado")
+		return
+	}
+	var req struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.IDToken) == "" {
+		writeError(w, http.StatusBadRequest, "id_token inválido")
+		return
+	}
+
+	info, err := verifyGoogleIDToken(r.Context(), strings.TrimSpace(req.IDToken))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "token de Google inválido")
+		return
+	}
+
+	user, err := h.ensureFirebaseGoogleUser(r.Context(), info.Email, info.Name, info.Sub)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "no se pudo crear o vincular el usuario")
+		return
+	}
+
+	customToken, err := h.auth.CustomToken(r.Context(), user.UID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "no se pudo completar el inicio de sesión con Google")
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	writeJSON(w, http.StatusOK, map[string]string{"custom_token": customToken})
+}
+
+type googleIDPayload struct {
+	Sub             string
+	Email           string
+	Name            string
+	EmailVerified   bool
+}
+
+func verifyGoogleIDToken(ctx context.Context, rawToken string) (googleIDPayload, error) {
+	endpoint := "https://oauth2.googleapis.com/tokeninfo?id_token=" + url.QueryEscape(rawToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return googleIDPayload{}, err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return googleIDPayload{}, err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= 300 {
+		return googleIDPayload{}, fmt.Errorf("tokeninfo status %d", res.StatusCode)
+	}
+
+	var raw struct {
+		Iss            string `json:"iss"`
+		Aud            string `json:"aud"`
+		Azp            string `json:"azp"`
+		Sub            string `json:"sub"`
+		Email          string `json:"email"`
+		EmailVerified  any    `json:"email_verified"`
+		Name           string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return googleIDPayload{}, err
+	}
+	if raw.Sub == "" || strings.TrimSpace(raw.Email) == "" {
+		return googleIDPayload{}, fmt.Errorf("token incompleto")
+	}
+	iss := strings.TrimRight(raw.Iss, "/")
+	if iss != "https://accounts.google.com" && iss != "accounts.google.com" {
+		return googleIDPayload{}, fmt.Errorf("emisor inválido")
+	}
+	if !googleAudienceAllowed(raw.Aud, raw.Azp) {
+		return googleIDPayload{}, fmt.Errorf("audiencia inválida")
+	}
+
+	verified := false
+	switch v := raw.EmailVerified.(type) {
+	case bool:
+		verified = v
+	case string:
+		verified = strings.EqualFold(v, "true")
+	}
+	if !verified {
+		return googleIDPayload{}, fmt.Errorf("email no verificado")
+	}
+
+	return googleIDPayload{
+		Sub:   raw.Sub,
+		Email: raw.Email,
+		Name:  raw.Name,
+	}, nil
+}
+
+const firebaseProjectNumber = "811424258609"
+
+func googleAudienceAllowed(aud, azp string) bool {
+	allowed := []string{
+		os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		os.Getenv("FIREBASE_GOOGLE_CLIENT_ID"),
+	}
+	for _, id := range allowed {
+		id = strings.TrimSpace(id)
+		if id != "" && (aud == id || azp == id) {
+			return true
+		}
+	}
+	return strings.Contains(aud, firebaseProjectNumber) || strings.Contains(azp, firebaseProjectNumber)
+}
+
 func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code string, linkCalendar bool) {
 	fail := h.gcalOAuth.FrontendLoginRedirect("error")
 	if h.gcalStore == nil || h.auth == nil {
@@ -73,7 +193,7 @@ func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code
 		return
 	}
 
-	user, err := h.ensureFirebaseUser(r.Context(), info.Email, info.Name)
+	user, err := h.ensureFirebaseGoogleUser(r.Context(), info.Email, info.Name, info.ID)
 	if err != nil {
 		http.Redirect(w, r, h.gcalOAuth.FrontendLoginRedirect("error"), http.StatusFound)
 		return
@@ -106,19 +226,44 @@ func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code
 }
 
 func (h *Handler) ensureFirebaseUser(ctx context.Context, email, name string) (*fbauth.UserRecord, error) {
+	return h.ensureFirebaseGoogleUser(ctx, email, name, "")
+}
+
+func (h *Handler) ensureFirebaseGoogleUser(ctx context.Context, email, name, googleUID string) (*fbauth.UserRecord, error) {
 	user, err := h.auth.GetUserByEmail(ctx, email)
-	if err == nil {
-		return user, nil
-	}
-	if !fbauth.IsUserNotFound(err) {
-		return nil, err
+	if err != nil {
+		if !fbauth.IsUserNotFound(err) {
+			return nil, err
+		}
+		params := (&fbauth.UserToCreate{}).Email(email).EmailVerified(true)
+		if strings.TrimSpace(name) != "" {
+			params = params.DisplayName(strings.TrimSpace(name))
+		}
+		user, err = h.auth.CreateUser(ctx, params)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	params := (&fbauth.UserToCreate{}).Email(email).EmailVerified(true)
-	if strings.TrimSpace(name) != "" {
-		params = params.DisplayName(strings.TrimSpace(name))
+	if strings.TrimSpace(googleUID) == "" {
+		return user, nil
 	}
-	return h.auth.CreateUser(ctx, params)
+	for _, p := range user.ProviderUserInfo {
+		if p.ProviderID == "google.com" {
+			return user, nil
+		}
+	}
+
+	updated, err := h.auth.UpdateUser(ctx, user.UID, (&fbauth.UserToUpdate{}).ProviderToLink(&fbauth.UserProvider{
+		UID:         googleUID,
+		ProviderID:  "google.com",
+		Email:       email,
+		DisplayName: name,
+	}))
+	if err != nil {
+		return user, nil
+	}
+	return updated, nil
 }
 
 func newLoginTicketID() (string, error) {

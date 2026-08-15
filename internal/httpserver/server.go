@@ -79,6 +79,7 @@ func New(
 	mux.Handle("GET /api/integrations/google-calendar/connect", accessMW(http.HandlerFunc(h.googleCalendarConnect)))
 	mux.HandleFunc("GET /api/auth/google", h.googleLoginStart)
 	mux.HandleFunc("POST /api/auth/google/complete", h.googleLoginComplete)
+	mux.HandleFunc("POST /api/auth/google/session", h.googleLoginWithIDToken)
 	mux.HandleFunc("GET /api/integrations/google-calendar/callback", h.googleCalendarCallback)
 	mux.Handle("DELETE /api/integrations/google-calendar", accessMW(http.HandlerFunc(h.googleCalendarDisconnect)))
 

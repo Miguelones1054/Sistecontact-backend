@@ -161,6 +161,7 @@ func (o *OAuth) Exchange(ctx context.Context, code string) (*oauth2.Token, error
 }
 
 type UserInfo struct {
+	ID    string
 	Email string
 	Name  string
 }
@@ -189,13 +190,14 @@ func (o *OAuth) FetchUserInfo(ctx context.Context, tok *oauth2.Token) (UserInfo,
 		return UserInfo{}, fmt.Errorf("obtener email de Google: status %d", res.StatusCode)
 	}
 	var info struct {
+		ID    string `json:"id"`
 		Email string `json:"email"`
 		Name  string `json:"name"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
 		return UserInfo{}, fmt.Errorf("parsear email de Google: %w", err)
 	}
-	return UserInfo{Email: info.Email, Name: info.Name}, nil
+	return UserInfo{ID: info.ID, Email: info.Email, Name: info.Name}, nil
 }
 
 func (o *OAuth) FrontendLoginRedirect(ticket string) string {
