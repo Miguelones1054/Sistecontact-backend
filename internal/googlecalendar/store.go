@@ -89,6 +89,57 @@ func (s *Store) Save(ctx context.Context, uid string, email string, tok *oauth2.
 	return nil
 }
 
+func (s *Store) loginTicketRef(id string) *firestore.DocumentRef {
+	return s.db.Collection("oauth_login_tickets").Doc(id)
+}
+
+func (s *Store) SaveLoginTicket(ctx context.Context, id, customToken, uid string, ttl time.Duration) error {
+	if id == "" || customToken == "" {
+		return fmt.Errorf("ticket vacío")
+	}
+	now := time.Now().UTC()
+	data := map[string]any{
+		"custom_token": customToken,
+		"uid":          uid,
+		"created_at":   now,
+		"expires_at":   now.Add(ttl),
+	}
+	if _, err := s.loginTicketRef(id).Set(ctx, data); err != nil {
+		return fmt.Errorf("guardar ticket de login Google: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ConsumeLoginTicket(ctx context.Context, id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("ticket vacío")
+	}
+	ref := s.loginTicketRef(id)
+	doc, err := ref.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", fmt.Errorf("ticket inválido o expirado")
+		}
+		return "", fmt.Errorf("leer ticket de login Google: %w", err)
+	}
+
+	var item struct {
+		CustomToken string    `firestore:"custom_token"`
+		ExpiresAt   time.Time `firestore:"expires_at"`
+	}
+	if err := doc.DataTo(&item); err != nil || item.CustomToken == "" {
+		return "", fmt.Errorf("ticket inválido")
+	}
+	if time.Now().UTC().After(item.ExpiresAt) {
+		_, _ = ref.Delete(ctx)
+		return "", fmt.Errorf("ticket inválido o expirado")
+	}
+	if _, err := ref.Delete(ctx); err != nil {
+		return "", fmt.Errorf("consumir ticket de login Google: %w", err)
+	}
+	return item.CustomToken, nil
+}
+
 func (s *Store) Delete(ctx context.Context, uid string) error {
 	if uid == "" {
 		return fmt.Errorf("uid vacío")

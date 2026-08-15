@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"firebase.google.com/go/v4/auth"
 	"github.com/sistecontact/api/internal/contactstatus"
 	"github.com/sistecontact/api/internal/googlecalendar"
 	"github.com/sistecontact/api/internal/model"
@@ -23,6 +24,7 @@ type Handler struct {
 	gcalStore     *googlecalendar.Store
 	gcalOAuth     *googlecalendar.OAuth
 	gcalClient    *googlecalendar.Client
+	auth          *auth.Client
 	calendarTZ    string
 }
 
@@ -36,6 +38,7 @@ func NewHandler(
 	gcalOAuth *googlecalendar.OAuth,
 	gcalClient *googlecalendar.Client,
 	calendarTZ string,
+	authClient *auth.Client,
 ) *Handler {
 	if calendarTZ == "" {
 		calendarTZ = googlecalendar.DefaultTimeZone
@@ -49,6 +52,7 @@ func NewHandler(
 		gcalStore:     gcalStore,
 		gcalOAuth:     gcalOAuth,
 		gcalClient:    gcalClient,
+		auth:          authClient,
 		calendarTZ:    calendarTZ,
 	}
 }

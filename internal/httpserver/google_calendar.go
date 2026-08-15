@@ -69,20 +69,37 @@ func (h *Handler) googleCalendarCallback(w http.ResponseWriter, r *http.Request)
 
 	q := r.URL.Query()
 	if errMsg := q.Get("error"); errMsg != "" {
-		http.Redirect(w, r, h.gcalOAuth.FrontendRedirect("error"), http.StatusFound)
+		target := h.gcalOAuth.FrontendRedirect("error")
+		if googlecalendar.LooksLikeLoginState(q.Get("state")) {
+			target = h.gcalOAuth.FrontendLoginRedirect("error")
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 
 	code := q.Get("code")
 	state := q.Get("state")
 	if code == "" || state == "" {
-		http.Redirect(w, r, h.gcalOAuth.FrontendRedirect("error"), http.StatusFound)
+		target := h.gcalOAuth.FrontendRedirect("error")
+		if googlecalendar.LooksLikeLoginState(state) {
+			target = h.gcalOAuth.FrontendLoginRedirect("error")
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 
 	uid, err := h.gcalOAuth.ParseState(state)
 	if err != nil {
-		http.Redirect(w, r, h.gcalOAuth.FrontendRedirect("error"), http.StatusFound)
+		target := h.gcalOAuth.FrontendRedirect("error")
+		if googlecalendar.LooksLikeLoginState(state) {
+			target = h.gcalOAuth.FrontendLoginRedirect("error")
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
+
+	if uid == googlecalendar.LoginStateUID {
+		h.finishGoogleLogin(w, r, code)
 		return
 	}
 

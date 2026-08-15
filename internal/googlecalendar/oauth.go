@@ -22,6 +22,7 @@ import (
 const (
 	ScopeCalendarEvents = "https://www.googleapis.com/auth/calendar.events"
 	ScopeUserEmail      = "https://www.googleapis.com/auth/userinfo.email"
+	LoginStateUID       = "__google_login__"
 	stateTTL            = 10 * time.Minute
 )
 
@@ -124,28 +125,56 @@ func (o *OAuth) Exchange(ctx context.Context, code string) (*oauth2.Token, error
 	return o.Config.Exchange(ctx, code)
 }
 
+type UserInfo struct {
+	Email string
+	Name  string
+}
+
 func (o *OAuth) FetchEmail(ctx context.Context, tok *oauth2.Token) (string, error) {
-	client := o.Config.Client(ctx, tok)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	info, err := o.FetchUserInfo(ctx, tok)
 	if err != nil {
 		return "", err
 	}
+	return info.Email, nil
+}
+
+func (o *OAuth) FetchUserInfo(ctx context.Context, tok *oauth2.Token) (UserInfo, error) {
+	client := o.Config.Client(ctx, tok)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	if err != nil {
+		return UserInfo{}, err
+	}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("obtener email de Google: %w", err)
+		return UserInfo{}, fmt.Errorf("obtener email de Google: %w", err)
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode >= 300 {
-		return "", fmt.Errorf("obtener email de Google: status %d", res.StatusCode)
+		return UserInfo{}, fmt.Errorf("obtener email de Google: status %d", res.StatusCode)
 	}
 	var info struct {
 		Email string `json:"email"`
+		Name  string `json:"name"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
-		return "", fmt.Errorf("parsear email de Google: %w", err)
+		return UserInfo{}, fmt.Errorf("parsear email de Google: %w", err)
 	}
-	return info.Email, nil
+	return UserInfo{Email: info.Email, Name: info.Name}, nil
+}
+
+func (o *OAuth) FrontendLoginRedirect(ticket string) string {
+	q := url.Values{}
+	q.Set("google_login", ticket)
+	return o.FrontendOrigin + "/login?" + q.Encode()
+}
+
+func LooksLikeLoginState(state string) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(string(raw), LoginStateUID+"|")
 }
 
 func (o *OAuth) Revoke(ctx context.Context, token string) error {
