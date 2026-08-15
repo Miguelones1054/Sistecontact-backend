@@ -166,7 +166,11 @@ func (o *OAuth) FetchUserInfo(ctx context.Context, tok *oauth2.Token) (UserInfo,
 func (o *OAuth) FrontendLoginRedirect(ticket string) string {
 	q := url.Values{}
 	q.Set("google_login", ticket)
-	return o.FrontendOrigin + "/login?" + q.Encode()
+	path := "/login"
+	if ticket != "error" {
+		path = "/"
+	}
+	return o.FrontendOrigin + path + "?" + q.Encode()
 }
 
 func LooksLikeLoginState(state string) bool {
