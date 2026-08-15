@@ -21,7 +21,9 @@ func (h *Handler) googleLoginStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "inicio de sesión con Google no configurado")
 		return
 	}
-	authURL, err := h.gcalOAuth.AuthCodeURL(googlecalendar.LoginStateUID)
+	intent := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("intent")))
+	register := intent == "register"
+	authURL, err := h.gcalOAuth.AuthCodeURLForSignIn(register)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -52,7 +54,7 @@ func (h *Handler) googleLoginComplete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"custom_token": token})
 }
 
-func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code string) {
+func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code string, linkCalendar bool) {
 	fail := h.gcalOAuth.FrontendLoginRedirect("error")
 	if h.gcalStore == nil || h.auth == nil {
 		http.Redirect(w, r, fail, http.StatusFound)
@@ -77,9 +79,11 @@ func (h *Handler) finishGoogleLogin(w http.ResponseWriter, r *http.Request, code
 		return
 	}
 
-	if err := h.gcalStore.Save(r.Context(), user.UID, info.Email, tok, googlecalendar.TokenScope(tok)); err != nil {
-		http.Redirect(w, r, h.gcalOAuth.FrontendLoginRedirect("error"), http.StatusFound)
-		return
+	if linkCalendar {
+		if err := h.gcalStore.Save(r.Context(), user.UID, info.Email, tok, googlecalendar.TokenScope(tok)); err != nil {
+			http.Redirect(w, r, h.gcalOAuth.FrontendLoginRedirect("error"), http.StatusFound)
+			return
+		}
 	}
 
 	customToken, err := h.auth.CustomToken(r.Context(), user.UID)

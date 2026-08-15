@@ -9,63 +9,6 @@ go run ./cmd/server
 # Alternativa directa sin PATH:
 # & "C:\Program Files\Go\bin\go.exe" run ./cmd/server
 
-# Subir cambios a GitHub (cuenta: rangersfitnes)
-cd C:\Users\juand\OneDrive\Escritorio\sistecontact\Sistecontact-backend
-gh auth switch --user rangersfitnes
-gh auth setup-git
-git add .
-git commit -m "describe el cambio"
-git push -u origin main
-
-# Repo:
-# https://github.com/Miguelones1054/Sistecontact-backend
-
-
-# =========================
-# FRONTEND (sistecontact-fronted)
-# =========================
-
-# Arrancar frontend
-cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted
-npm run dev
-
-# Subir cambios a GitHub (cuenta: rangersfitnes)
-cd C:\Users\juand\OneDrive\Escritorio\sistecontact\sistecontact-fronted
-gh auth switch --user rangersfitnes
-gh auth setup-git
-git add .
-git commit -m "describe el cambio"
-git push -u origin main
-
-# Repo:
-# https://github.com/Miguelones1054/sistecontact-fronted
-
-
-# =========================
-# GOOGLE CALENDAR OAUTH
-# =========================
-# 1) Google Cloud Console → APIs y servicios → Credenciales → Crear cliente OAuth (Web)
-# 2) URI de redirección autorizada:
-#    https://apisistecontact.nodefex.com/api/integrations/google-calendar/callback
-#    (local) http://localhost:8080/api/integrations/google-calendar/callback
-# 3) En el .env del backend (local y VPS) agregar:
-#    GOOGLE_OAUTH_CLIENT_ID=...
-#    GOOGLE_OAUTH_CLIENT_SECRET=...
-#    GOOGLE_OAUTH_REDIRECT_URL=https://apisistecontact.nodefex.com/api/integrations/google-calendar/callback
-#    FRONTEND_ORIGIN=https://sistecontact.nodefex.com
-# 4) Habilitar Google Calendar API en el proyecto
-# 5) Tras cambiar .env en el VPS: redeploy / reiniciar sistecontact-api
-
-
-# =========================
-# Notas
-# =========================
-# - Si falla el push (403), ejecuta primero:
-#   gh auth switch --user rangersfitnes
-#   gh auth setup-git
-# - No subas .env ni el JSON de Firebase (ya están en .gitignore)
-# - Si no hay cambios, git commit dirá: nothing to commit
-# - Script automático: C:\Users\juand\OneDrive\Escritorio\sistecontact\push-all.ps1
 
 
 # =========================

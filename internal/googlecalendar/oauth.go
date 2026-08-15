@@ -22,7 +22,9 @@ import (
 const (
 	ScopeCalendarEvents = "https://www.googleapis.com/auth/calendar.events"
 	ScopeUserEmail      = "https://www.googleapis.com/auth/userinfo.email"
+	ScopeUserProfile    = "https://www.googleapis.com/auth/userinfo.profile"
 	LoginStateUID       = "__google_login__"
+	RegisterStateUID    = "__google_register__"
 	stateTTL            = 10 * time.Minute
 )
 
@@ -73,6 +75,39 @@ func (o *OAuth) AuthCodeURL(uid string) (string, error) {
 		oauth2.AccessTypeOffline,
 		oauth2.SetAuthURLParam("prompt", "consent"),
 	), nil
+}
+
+func (o *OAuth) configWithScopes(scopes []string) *oauth2.Config {
+	cfg := *o.Config
+	cfg.Scopes = scopes
+	return &cfg
+}
+
+// AuthCodeURLForSignIn inicia login o registro con Google.
+// Login: solo cuenta/email, sin volver a pedir Calendar.
+// Registro: Calendar + consentimiento completo.
+func (o *OAuth) AuthCodeURLForSignIn(register bool) (string, error) {
+	if !o.Configured() {
+		return "", fmt.Errorf("Google Calendar OAuth no configurado")
+	}
+	uid := LoginStateUID
+	scopes := []string{ScopeUserEmail, ScopeUserProfile}
+	opts := []oauth2.AuthCodeOption{
+		oauth2.SetAuthURLParam("prompt", "select_account"),
+	}
+	if register {
+		uid = RegisterStateUID
+		scopes = []string{ScopeCalendarEvents, ScopeUserEmail, ScopeUserProfile}
+		opts = []oauth2.AuthCodeOption{
+			oauth2.AccessTypeOffline,
+			oauth2.SetAuthURLParam("prompt", "consent"),
+		}
+	}
+	state, err := o.makeState(uid)
+	if err != nil {
+		return "", err
+	}
+	return o.configWithScopes(scopes).AuthCodeURL(state, opts...), nil
 }
 
 func (o *OAuth) makeState(uid string) (string, error) {
@@ -178,7 +213,8 @@ func LooksLikeLoginState(state string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(string(raw), LoginStateUID+"|")
+	return strings.HasPrefix(string(raw), LoginStateUID+"|") ||
+		strings.HasPrefix(string(raw), RegisterStateUID+"|")
 }
 
 func (o *OAuth) Revoke(ctx context.Context, token string) error {

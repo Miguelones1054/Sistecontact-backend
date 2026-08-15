@@ -98,8 +98,8 @@ func (h *Handler) googleCalendarCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if uid == googlecalendar.LoginStateUID {
-		h.finishGoogleLogin(w, r, code)
+	if uid == googlecalendar.LoginStateUID || uid == googlecalendar.RegisterStateUID {
+		h.finishGoogleLogin(w, r, code, uid == googlecalendar.RegisterStateUID)
 		return
 	}
 
