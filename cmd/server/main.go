@@ -50,8 +50,8 @@ func main() {
 		cfg.SearchWorkers,
 		logger,
 	)
-	visitStore := visits.NewStore(fb.Firestore)
-	prospectStore := prospects.NewStore(fb.Firestore)
+	visitStore := visits.NewStore(fb.Firestore, fb.Auth)
+	prospectStore := prospects.NewStore(fb.Firestore, fb.Auth)
 	contactStore := contactstatus.NewStore(fb.Firestore)
 	settingsStore := usersettings.NewStore(fb.Firestore)
 	gcalStore := googlecalendar.NewStore(fb.Firestore)

@@ -3,13 +3,17 @@ package prospects
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"firebase.google.com/go/v4/auth"
 	"github.com/sistecontact/api/internal/model"
+	"github.com/sistecontact/api/internal/placeid"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -17,11 +21,12 @@ import (
 // Store: users/{uid}/prospects/{placeId}
 // y espejo global de citas: business_scheduled/{placeId}/schedulers/{uid}
 type Store struct {
-	db *firestore.Client
+	db   *firestore.Client
+	auth *auth.Client
 }
 
-func NewStore(db *firestore.Client) *Store {
-	return &Store{db: db}
+func NewStore(db *firestore.Client, authClient *auth.Client) *Store {
+	return &Store{db: db, auth: authClient}
 }
 
 func (s *Store) col(uid string) *firestore.CollectionRef {
@@ -29,11 +34,11 @@ func (s *Store) col(uid string) *firestore.CollectionRef {
 }
 
 func (s *Store) globalSchedulers(placeID string) *firestore.CollectionRef {
-	return s.db.Collection("business_scheduled").Doc(sanitizePlaceID(placeID)).Collection("schedulers")
+	return s.db.Collection("business_scheduled").Doc(placeid.SanitizeDocID(placeID)).Collection("schedulers")
 }
 
 func sanitizePlaceID(placeID string) string {
-	return strings.ReplaceAll(placeID, "/", "_")
+	return placeid.SanitizeDocID(placeID)
 }
 
 func validateClockTime(field, value string) error {
@@ -145,39 +150,210 @@ func (s *Store) GetByPlaceIDs(ctx context.Context, uid string, placeIDs []string
 }
 
 func (s *Store) ListGlobalSchedulers(ctx context.Context, placeID string) ([]model.GlobalScheduledVisit, error) {
-	placeID = strings.TrimSpace(placeID)
+	placeID = placeid.Normalize(strings.TrimSpace(placeID))
 	if placeID == "" {
 		return nil, fmt.Errorf("place_id vacío")
 	}
 
-	docs, err := s.globalSchedulers(placeID).Documents(ctx).GetAll()
-	if err != nil {
-		return nil, fmt.Errorf("listar citas programadas: %w", err)
+	byUID := map[string]model.GlobalScheduledVisit{}
+	merge := func(item model.GlobalScheduledVisit) {
+		if item.UID == "" {
+			return
+		}
+		prev, ok := byUID[item.UID]
+		if !ok {
+			byUID[item.UID] = item
+			return
+		}
+		merged := prev
+		if merged.Email == "" {
+			merged.Email = item.Email
+		}
+		if merged.DisplayName == "" {
+			merged.DisplayName = item.DisplayName
+		}
+		if merged.BusinessName == "" {
+			merged.BusinessName = item.BusinessName
+		}
+		if merged.VisitDate == "" {
+			merged.VisitDate = item.VisitDate
+			merged.VisitTime = item.VisitTime
+		}
+		if merged.CallDate == "" {
+			merged.CallDate = item.CallDate
+			merged.CallTime = item.CallTime
+		}
+		if item.UpdatedAt.After(merged.UpdatedAt) {
+			merged.UpdatedAt = item.UpdatedAt
+		}
+		byUID[item.UID] = merged
 	}
 
-	out := make([]model.GlobalScheduledVisit, 0, len(docs))
-	for _, d := range docs {
-		var item model.GlobalScheduledVisit
-		if err := d.DataTo(&item); err != nil {
-			continue
+	if docs, err := s.globalSchedulers(placeID).Documents(ctx).GetAll(); err == nil {
+		for _, d := range docs {
+			var item model.GlobalScheduledVisit
+			if err := d.DataTo(&item); err != nil {
+				continue
+			}
+			if item.UID == "" {
+				item.UID = d.Ref.ID
+			}
+			merge(item)
 		}
+	}
+
+	cgOK := true
+	for _, pid := range placeid.Variants(placeID) {
+		docs, err := s.db.CollectionGroup("prospects").Where("place_id", "==", pid).Documents(ctx).GetAll()
+		if err != nil {
+			slog.Warn("collection group prospects por place_id", "place_id", pid, "err", err)
+			cgOK = false
+			break
+		}
+		for _, d := range docs {
+			var p model.Prospect
+			if err := d.DataTo(&p); err != nil {
+				continue
+			}
+			if strings.TrimSpace(p.VisitDate) == "" && strings.TrimSpace(p.CallDate) == "" {
+				continue
+			}
+			uid := ""
+			if d.Ref != nil && d.Ref.Parent != nil && d.Ref.Parent.Parent != nil {
+				uid = d.Ref.Parent.Parent.ID
+			}
+			if uid == "" {
+				continue
+			}
+			merge(model.GlobalScheduledVisit{
+				UID:          uid,
+				PlaceID:      p.PlaceID,
+				BusinessName: p.Name,
+				VisitDate:    p.VisitDate,
+				VisitTime:    p.VisitTime,
+				CallDate:     p.CallDate,
+				CallTime:     p.CallTime,
+				CreatedAt:    p.CreatedAt,
+				UpdatedAt:    p.UpdatedAt,
+			})
+		}
+	}
+
+	if !cgOK {
+		if err := s.scanUsersForScheduled(ctx, placeID, merge); err != nil {
+			slog.Warn("scan users scheduled", "place_id", placeID, "err", err)
+		}
+	}
+
+	out := make([]model.GlobalScheduledVisit, 0, len(byUID))
+	for _, item := range byUID {
 		out = append(out, item)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i].VisitDate, out[j].VisitDate
-		if a == b {
+		ai := out[i].VisitDate
+		if ai == "" {
+			ai = out[i].CallDate
+		}
+		aj := out[j].VisitDate
+		if aj == "" {
+			aj = out[j].CallDate
+		}
+		if ai == aj {
 			return out[i].UpdatedAt.After(out[j].UpdatedAt)
 		}
-		if a == "" {
+		if ai == "" {
 			return false
 		}
-		if b == "" {
+		if aj == "" {
 			return true
 		}
-		return a < b
+		return ai < aj
 	})
 	return out, nil
+}
+
+func (s *Store) scanUsersForScheduled(ctx context.Context, placeID string, merge func(model.GlobalScheduledVisit)) error {
+	// Collection group sin filtro + Auth UIDs (los docs padre en /users suelen no existir).
+	it := s.db.CollectionGroup("prospects").Documents(ctx)
+	for {
+		d, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			slog.Warn("scan scheduled prospects group", "err", err)
+			break
+		}
+		var p model.Prospect
+		if err := d.DataTo(&p); err != nil {
+			continue
+		}
+		if !placeid.MatchesDoc(placeID, d.Ref.ID) && !placeid.Matches(placeID, p.PlaceID) {
+			continue
+		}
+		if strings.TrimSpace(p.VisitDate) == "" && strings.TrimSpace(p.CallDate) == "" {
+			continue
+		}
+		uid := ""
+		if d.Ref != nil && d.Ref.Parent != nil && d.Ref.Parent.Parent != nil {
+			uid = d.Ref.Parent.Parent.ID
+		}
+		if uid == "" {
+			continue
+		}
+		merge(model.GlobalScheduledVisit{
+			UID:          uid,
+			PlaceID:      p.PlaceID,
+			BusinessName: p.Name,
+			VisitDate:    p.VisitDate,
+			VisitTime:    p.VisitTime,
+			CallDate:     p.CallDate,
+			CallTime:     p.CallTime,
+			CreatedAt:    p.CreatedAt,
+			UpdatedAt:    p.UpdatedAt,
+		})
+	}
+
+	if s.auth == nil {
+		return nil
+	}
+	docIDs := placeid.DocIDCandidates(placeID)
+	iterAuth := s.auth.Users(ctx, "")
+	for {
+		u, err := iterAuth.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		for _, docID := range docIDs {
+			doc, err := s.db.Collection("users").Doc(u.UID).Collection("prospects").Doc(docID).Get(ctx)
+			if err != nil {
+				continue
+			}
+			var p model.Prospect
+			if err := doc.DataTo(&p); err != nil {
+				continue
+			}
+			if strings.TrimSpace(p.VisitDate) == "" && strings.TrimSpace(p.CallDate) == "" {
+				continue
+			}
+			merge(model.GlobalScheduledVisit{
+				UID:          u.UID,
+				PlaceID:      p.PlaceID,
+				BusinessName: p.Name,
+				VisitDate:    p.VisitDate,
+				VisitTime:    p.VisitTime,
+				CallDate:     p.CallDate,
+				CallTime:     p.CallTime,
+				CreatedAt:    p.CreatedAt,
+				UpdatedAt:    p.UpdatedAt,
+			})
+		}
+	}
+	return nil
 }
 
 func (s *Store) Upsert(
@@ -187,7 +363,7 @@ func (s *Store) Upsert(
 	req model.UpsertProspectRequest,
 	appointmentIntervalMinutes int,
 ) (model.Prospect, error) {
-	placeID = strings.TrimSpace(placeID)
+	placeID = placeid.Normalize(strings.TrimSpace(placeID))
 	if placeID == "" {
 		return model.Prospect{}, fmt.Errorf("place_id vacío")
 	}
@@ -400,7 +576,7 @@ func (s *Store) Upsert(
 	// Set sin merge: campos omitempty vacíos se eliminan del documento.
 	batch.Set(ref, item)
 
-	if visitDate != "" {
+	if visitDate != "" || callDate != "" {
 		displayName := strings.TrimSpace(identity.DisplayName)
 		if displayName == "" {
 			displayName = strings.TrimSpace(identity.Email)
@@ -412,11 +588,14 @@ func (s *Store) Upsert(
 			PlaceID:      placeID,
 			BusinessName: item.Name,
 			VisitDate:    visitDate,
+			VisitTime:    visitTime,
+			CallDate:     callDate,
+			CallTime:     callTime,
 			CreatedAt:    createdAt,
 			UpdatedAt:    now,
 		})
 	} else {
-		// Si ya no hay visita agendada, eliminar el espejo global de la cita.
+		// Si ya no hay visita ni llamada agendada, eliminar el espejo global.
 		batch.Delete(globalRef)
 	}
 

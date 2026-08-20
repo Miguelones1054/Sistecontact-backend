@@ -43,15 +43,18 @@ type VisitorIdentity struct {
 	DisplayName string
 }
 
-// GlobalVisitor es la entrada pública de quién visitó un comercio.
-// Colección: business_visits/{placeId}/visitors/{uid}
+// GlobalVisitor es la entrada pública de quién visitó / contactó un comercio.
+// Colección espejo: business_visits/{placeId}/visitors/{uid}
+// También se arma desde collection group de visits y prospects.
 type GlobalVisitor struct {
-	UID          string    `json:"uid" firestore:"uid"`
-	Email        string    `json:"email" firestore:"email"`
-	DisplayName  string    `json:"display_name" firestore:"display_name"`
-	PlaceID      string    `json:"place_id" firestore:"place_id"`
-	BusinessName string    `json:"business_name" firestore:"business_name"`
-	VisitResult  string    `json:"visit_result" firestore:"visit_result"`
-	VisitedAt    time.Time `json:"visited_at" firestore:"visited_at"`
-	UpdatedAt    time.Time `json:"updated_at" firestore:"updated_at"`
+	UID             string    `json:"uid" firestore:"uid"`
+	Email           string    `json:"email" firestore:"email"`
+	DisplayName     string    `json:"display_name" firestore:"display_name"`
+	PlaceID         string    `json:"place_id" firestore:"place_id"`
+	BusinessName    string    `json:"business_name" firestore:"business_name"`
+	VisitResult     string    `json:"visit_result" firestore:"visit_result"`
+	ContactOutcome  string    `json:"contact_outcome,omitempty" firestore:"contact_outcome,omitempty"`
+	ContactStatus   string    `json:"contact_status,omitempty" firestore:"contact_status,omitempty"`
+	VisitedAt       time.Time `json:"visited_at" firestore:"visited_at"`
+	UpdatedAt       time.Time `json:"updated_at" firestore:"updated_at"`
 }

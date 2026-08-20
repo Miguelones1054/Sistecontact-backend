@@ -63,14 +63,18 @@ type UpsertProspectRequest struct {
 }
 
 // GlobalScheduledVisit es la cita programada visible entre asesores.
-// Colección: business_scheduled/{placeId}/schedulers/{uid}
+// Colección espejo: business_scheduled/{placeId}/schedulers/{uid}
+// También se arma desde collection group de prospects.
 type GlobalScheduledVisit struct {
 	UID          string    `json:"uid" firestore:"uid"`
 	Email        string    `json:"email" firestore:"email"`
 	DisplayName  string    `json:"display_name" firestore:"display_name"`
 	PlaceID      string    `json:"place_id" firestore:"place_id"`
 	BusinessName string    `json:"business_name" firestore:"business_name"`
-	VisitDate    string    `json:"visit_date" firestore:"visit_date"`
+	VisitDate    string    `json:"visit_date,omitempty" firestore:"visit_date"`
+	VisitTime    string    `json:"visit_time,omitempty" firestore:"visit_time,omitempty"`
+	CallDate     string    `json:"call_date,omitempty" firestore:"call_date,omitempty"`
+	CallTime     string    `json:"call_time,omitempty" firestore:"call_time,omitempty"`
 	CreatedAt    time.Time `json:"created_at" firestore:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" firestore:"updated_at"`
 }

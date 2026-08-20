@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -203,6 +204,7 @@ func (h *Handler) listBusinessVisitors(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	h.enrichGlobalVisitors(r.Context(), items)
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	writeJSON(w, http.StatusOK, items)
 }
@@ -225,6 +227,7 @@ func (h *Handler) listBusinessScheduled(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	h.enrichGlobalSchedulers(r.Context(), items)
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	writeJSON(w, http.StatusOK, items)
 }
@@ -481,4 +484,90 @@ func (h *Handler) upsertSchedulingSettings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) firebaseUsersByUID(ctx context.Context, uids []string) map[string]*auth.UserRecord {
+	out := map[string]*auth.UserRecord{}
+	if h.auth == nil || len(uids) == 0 {
+		return out
+	}
+	seen := map[string]struct{}{}
+	ids := make([]auth.UserIdentifier, 0, len(uids))
+	for _, uid := range uids {
+		uid = strings.TrimSpace(uid)
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		ids = append(ids, &auth.UIDIdentifier{UID: uid})
+	}
+	for start := 0; start < len(ids); start += 100 {
+		end := start + 100
+		if end > len(ids) {
+			end = len(ids)
+		}
+		res, err := h.auth.GetUsers(ctx, ids[start:end])
+		if err != nil {
+			continue
+		}
+		for _, u := range res.Users {
+			if u != nil && u.UID != "" {
+				out[u.UID] = u
+			}
+		}
+	}
+	return out
+}
+
+func (h *Handler) enrichGlobalVisitors(ctx context.Context, items []model.GlobalVisitor) {
+	need := make([]string, 0, len(items))
+	for _, it := range items {
+		if strings.TrimSpace(it.Email) == "" || strings.TrimSpace(it.DisplayName) == "" {
+			need = append(need, it.UID)
+		}
+	}
+	users := h.firebaseUsersByUID(ctx, need)
+	for i := range items {
+		u := users[items[i].UID]
+		if u == nil {
+			continue
+		}
+		if strings.TrimSpace(items[i].Email) == "" {
+			items[i].Email = u.Email
+		}
+		if strings.TrimSpace(items[i].DisplayName) == "" {
+			items[i].DisplayName = u.DisplayName
+		}
+		if strings.TrimSpace(items[i].DisplayName) == "" {
+			items[i].DisplayName = u.Email
+		}
+	}
+}
+
+func (h *Handler) enrichGlobalSchedulers(ctx context.Context, items []model.GlobalScheduledVisit) {
+	need := make([]string, 0, len(items))
+	for _, it := range items {
+		if strings.TrimSpace(it.Email) == "" || strings.TrimSpace(it.DisplayName) == "" {
+			need = append(need, it.UID)
+		}
+	}
+	users := h.firebaseUsersByUID(ctx, need)
+	for i := range items {
+		u := users[items[i].UID]
+		if u == nil {
+			continue
+		}
+		if strings.TrimSpace(items[i].Email) == "" {
+			items[i].Email = u.Email
+		}
+		if strings.TrimSpace(items[i].DisplayName) == "" {
+			items[i].DisplayName = u.DisplayName
+		}
+		if strings.TrimSpace(items[i].DisplayName) == "" {
+			items[i].DisplayName = u.Email
+		}
+	}
 }
